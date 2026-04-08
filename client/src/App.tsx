@@ -185,15 +185,31 @@ export default function App() {
           <div ref={messagesEndRef} />
         </main>
 
+        {showEmojis && (
+          <div className="grid grid-cols-6 gap-2 p-4 bg-white/10 backdrop-blur-md border-t border-white/10">
+            {CAT_EMOJIS.map(emoji => (
+              <button 
+                key={emoji} 
+                type="button"
+                onClick={() => setInputValue(prev => prev + emoji)} 
+                className="text-2xl hover:scale-125 transition-transform p-3 active:scale-90"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
+
         <footer className="px-3 py-3 bg-white/5 backdrop-blur-md relative z-20">
           <div className="flex items-center gap-2">
             <div className="flex-1 flex items-center bg-white rounded-full px-4 py-1.5 shadow-lg">
-              <button onClick={() => setShowEmojis(!showEmojis)} className={`transition-colors ${showEmojis ? 'text-[#6A1B9A]' : 'text-slate-400'}`}><Smile size={24} /></button>
+              <button type="button" onClick={() => setShowEmojis(!showEmojis)} className={`transition-colors ${showEmojis ? 'text-[#6A1B9A]' : 'text-slate-400'}`}><Smile size={24} /></button>
               <input value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend(inputValue)} placeholder="Message..." className="flex-1 bg-transparent border-none outline-none py-2 px-3 text-slate-800 text-[16px]" />
               <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-              <button onClick={() => fileInputRef.current?.click()} className="text-slate-400 rotate-45 hover:text-[#6A1B9A] transition-colors"><Paperclip size={22} /></button>
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="text-slate-400 rotate-45 hover:text-[#6A1B9A] transition-colors"><Paperclip size={22} /></button>
             </div>
             <button 
+              type="button"
               onMouseDown={startLongPress} onMouseUp={cancelLongPress} onMouseLeave={cancelLongPress}
               onTouchStart={startLongPress} onTouchEnd={cancelLongPress}
               onClick={() => handleSend(inputValue)} 
