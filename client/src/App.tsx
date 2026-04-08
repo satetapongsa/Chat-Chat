@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Send, Cat, Paperclip, Smile, CheckCheck, FileText, X, Timer, Settings, UserCircle, Edit3, Reply, PlayCircle } from "lucide-react";
 
 /**
- * 🐱 CATGRAM PRO - VIDEO SUPPORT & REPLY UPDATE
+ * 🐱 CATGRAM PRO - DOUBLE TAP TO REPLY UPDATE
  */
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -192,8 +192,7 @@ export default function App() {
               return (
                 <motion.div 
                     key={msg.id || i} initial={{ opacity: 0, scale: 0.9, x: isMe ? 20 : -20 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.5 }} className={`flex w-full flex-col mb-4 ${isMe ? 'items-end' : 'items-start'}`}
-                    onMouseDown={() => !isMe && startLongPress(() => setReplyingTo(msg))} onMouseUp={cancelLongPress} onMouseLeave={cancelLongPress}
-                    onTouchStart={() => !isMe && startLongPress(() => setReplyingTo(msg))} onTouchEnd={cancelLongPress}
+                    onDoubleClick={() => !isMe && setReplyingTo(msg)}
                 >
                   <span className={`text-[10px] font-black text-white/40 mb-1 ${isMe ? 'mr-1' : 'ml-1'} uppercase tracking-widest`}>{msg.sender_name}</span>
                   <div className={`relative p-2 rounded-2xl shadow-xl max-w-[90%] sm:max-w-xl ${isMe ? 'bg-[#E1FEC6] text-[#1a3a14] rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none'}`}>
@@ -202,7 +201,7 @@ export default function App() {
                         <div className="bg-black/5 rounded-xl p-2 mb-2 border-l-4 border-purple-500 text-[11px] opacity-70 italic flex items-center gap-3 justify-between overflow-hidden">
                             <div className="truncate">
                                 <span className="font-bold block mb-1">@{msg.reply_to_name}</span>
-                                <span className="truncate block">{msg.reply_to_content}</span>
+                                <span className="truncate block text-xs">{msg.reply_to_content}</span>
                             </div>
                             {msg.reply_to_image_url && (
                                 <div className="relative w-10 h-10 shrink-0">
@@ -291,7 +290,7 @@ export default function App() {
 
         {showEmojis && (
             <AnimatePresence>
-                <div className="w-full flex justify-center bg-white border-t border-white/10 z-[60] overflow-y-auto max-h-[300px]">
+                <div className="w-full flex justify-center bg-white border-t border-white/10 z-[60] overflow-y-auto max-h-[250px]">
                     <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} className="w-full max-w-5xl grid grid-cols-6 sm:grid-cols-12 gap-1 p-4 select-none">
                     {ALL_EMOJIS.map(emoji => (
                         <button key={emoji} type="button" onClick={() => setInputValue(prev => prev + emoji)} className="text-3xl hover:scale-125 transition-transform p-3 active:scale-90">{emoji}</button>
