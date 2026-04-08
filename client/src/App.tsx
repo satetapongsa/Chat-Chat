@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from '@supabase/supabase-js';
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Cat, Paperclip, Smile, CheckCheck, FileText, X, ShieldAlert, Timer } from "lucide-react";
+import { Send, Cat, Paperclip, Smile, CheckCheck, FileText, X, ShieldAlert, Timer, Settings, UserCircle } from "lucide-react";
 
 /**
- * 🐱 CATGRAM PRO - CUSTOM TIMERS & FULL MEDIA SUPPORT
+ * 🐱 CATGRAM PRO - UNIFIED SETTINGS (LONG PRESS SEND)
  */
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -30,13 +30,12 @@ export default function App() {
   const [isUploading, setIsUploading] = useState(false);
   const [expandedImage, setExpandedImage] = useState<string | null>(null);
   const [isSecureBlurred, setIsSecureBlurred] = useState(false);
-  const [currentLifetime, setCurrentLifetime] = useState(10000); // Default 10s
-  const [showTimerMenu, setShowTimerMenu] = useState(false);
+  const [currentLifetime, setCurrentLifetime] = useState(() => Number(localStorage.getItem('catgram_lifetime')) || 10000);
+  const [showSettings, setShowSettings] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<any>(null);
-  const emojiLongPressTimer = useRef<any>(null);
 
   const [myId] = useState(() => {
     let id = localStorage.getItem('catgram_user_id');
@@ -47,22 +46,21 @@ export default function App() {
     return id;
   });
 
+  // Security & Realtime logic
   useEffect(() => {
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     const handleVisibilityChange = () => { if (isMobile && document.visibilityState === 'hidden') setIsSecureBlurred(true); };
     const handleFocus = () => setIsSecureBlurred(false);
-    const handleBlur = () => { if (isMobile) setIsSecureBlurred(true); };
     if (isMobile) {
       document.addEventListener('contextmenu', e => e.preventDefault());
       document.body.style.userSelect = 'none';
     }
     window.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleFocus);
-    window.addEventListener('blur', handleBlur);
+    window.addEventListener('blur', () => { if (isMobile) setIsSecureBlurred(true); });
     return () => {
       window.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('blur', handleBlur);
     };
   }, []);
 
@@ -107,13 +105,16 @@ export default function App() {
     }
   }, [isLoaded]);
 
-  const scheduleDeletion = (id: string, delay: number) => {
-    setTimeout(() => { deleteMessage(id); }, delay);
+  const scheduleDeletion = (id: string, delay: number) => { setTimeout(() => { deleteMessage(id); }, delay); };
+  const deleteMessage = async (id: string) => { await supabase.from('messages').delete().eq('id', id); };
+
+  const startLongPress = () => {
+    longPressTimer.current = setTimeout(() => {
+      setShowSettings(true); // Open settings on long press
+    }, 800);
   };
 
-  const deleteMessage = async (id: string) => {
-    await supabase.from('messages').delete().eq('id', id);
-  };
+  const cancelLongPress = () => clearTimeout(longPressTimer.current);
 
   const saveName = () => {
     if (tempName.trim()) {
@@ -122,23 +123,6 @@ export default function App() {
       setTempName("");
     }
   };
-
-  const startLongPress = (type: 'send' | 'emoji') => {
-    if (type === 'send') {
-        longPressTimer.current = setTimeout(() => setUserName(null), 1000);
-    } else {
-        emojiLongPressTimer.current = setTimeout(() => setShowTimerMenu(true), 800);
-    }
-  };
-
-  const cancelLongPress = (type: 'send' | 'emoji') => {
-    if (type === 'send') clearTimeout(longPressTimer.current);
-    else clearTimeout(emojiLongPressTimer.current);
-  };
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   const handleSend = async (content: string, type = 'text', fileUrl?: string, fileName?: string) => {
     if (!content.trim() && !fileUrl) return;
@@ -150,6 +134,12 @@ export default function App() {
     setShowEmojis(false);
   };
 
+  const setLifetime = (val: number) => {
+    setCurrentLifetime(val);
+    localStorage.setItem('catgram_lifetime', String(val));
+    // ให้ Feedback สวยๆ หน่อยตอนกดเลือก
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -158,9 +148,7 @@ export default function App() {
     try {
       await supabase.storage.from('chat-files').upload(`uploads/${fileName}`, file);
       const { data: { publicUrl } } = supabase.storage.from('chat-files').getPublicUrl(`uploads/${fileName}`);
-      // Supports jpg, png, gif, webp via generic 'image' split
-      const type = file.type.startsWith('image/') ? 'image' : 'file';
-      await handleSend(file.name, type, publicUrl, file.name);
+      await handleSend(file.name, file.type.startsWith('image/') ? 'image' : 'file', publicUrl, file.name);
     } catch (error: any) { alert(`Upload failed: ${error.message}`); } finally { setIsUploading(false); }
   };
 
@@ -205,6 +193,47 @@ export default function App() {
         </div>
       )}
 
+      {/* 🛠️ UNIFIED SETTINGS MODAL (Long Press Send) */}
+      <AnimatePresence>
+          {showSettings && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-xl flex items-center justify-center p-6">
+                <motion.div initial={{ y: 50, scale: 0.9 }} animate={{ y: 0, scale: 1 }} exit={{ y: 50, scale: 0.9 }} className="w-full max-w-sm bg-white rounded-[40px] p-8 shadow-2xl relative overflow-hidden">
+                    <button onClick={() => setShowSettings(false)} className="absolute top-6 right-6 text-slate-300 hover:text-slate-600 transition-colors"><X size={24} /></button>
+                    <div className="flex flex-col gap-8">
+                        <div>
+                            <div className="flex items-center gap-2 text-slate-400 font-black uppercase text-[11px] tracking-widest mb-4">
+                                <UserCircle size={14} /> My Identity
+                            </div>
+                            <div className="flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                <span className="font-bold text-slate-800 text-lg">{userName}</span>
+                                <button onClick={() => { setUserName(null); setShowSettings(false); }} className="text-[#6A1B9A] text-xs font-black uppercase hover:underline">Change Alias</button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div className="flex items-center gap-2 text-slate-400 font-black uppercase text-[11px] tracking-widest mb-4">
+                                <Timer size={14} /> Explosion Timer
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                {LIFETIME_OPTIONS.map(opt => (
+                                    <button 
+                                        key={opt.label} 
+                                        onClick={() => setLifetime(opt.value)}
+                                        className={`py-3 rounded-2xl font-bold transition-all text-sm ${currentLifetime === opt.value ? 'bg-[#6A1B9A] text-white shadow-lg shadow-purple-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <button onClick={() => setShowSettings(false)} className="w-full bg-[#6A1B9A] text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all text-sm">Apply & Return</button>
+                    </div>
+                </motion.div>
+            </motion.div>
+          )}
+      </AnimatePresence>
+
       <div className="w-full max-w-lg h-full sm:h-[90vh] flex flex-col bg-white/5 backdrop-blur-3xl sm:rounded-3xl shadow-2xl relative overflow-hidden border border-white/20">
         <main className="flex-1 overflow-y-auto p-4 space-y-6 z-10 scrollbar-hide pt-10 px-6">
           <AnimatePresence>
@@ -229,60 +258,39 @@ export default function App() {
           <div ref={messagesEndRef} />
         </main>
 
-        {showEmojis && (
-          <div className="relative">
-            {/* Timer Options Overlay */}
-            <AnimatePresence>
-                {showTimerMenu && (
-                  <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} className="absolute bottom-[100%] left-0 right-0 bg-white/95 backdrop-blur-xl p-4 flex flex-col items-center gap-4 rounded-t-3xl border-t border-white/20 shadow-2xl z-[60]">
-                     <div className="flex items-center gap-2 text-[#6A1B9A] font-black uppercase tracking-widest text-[12px]">
-                        <Timer size={16} /> Select Message Lifetime
-                     </div>
-                     <div className="flex gap-2 w-full">
-                        {LIFETIME_OPTIONS.map(opt => (
-                            <button key={opt.label} onClick={() => { setCurrentLifetime(opt.value); setShowTimerMenu(false); }} className={`flex-1 py-3 rounded-xl font-bold transition-all ${currentLifetime === opt.value ? 'bg-[#6A1B9A] text-white' : 'bg-black/5 text-[#6A1B9A] hover:bg-black/10'}`}>
-                                {opt.label}
-                            </button>
-                        ))}
-                     </div>
-                     <button onClick={() => setShowTimerMenu(false)} className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2 hover:text-red-500 transition-colors">Cancel</button>
-                  </motion.div>
-                )}
-            </AnimatePresence>
-
-            <div className="grid grid-cols-6 gap-2 p-4 bg-white/10 backdrop-blur-md border-t border-white/10 select-none">
-              {CAT_EMOJIS.map(emoji => (
-                <button 
-                  key={emoji} type="button" 
-                  onMouseDown={() => startLongPress('emoji')} onMouseUp={() => cancelLongPress('emoji')} onMouseLeave={() => cancelLongPress('emoji')}
-                  onTouchStart={() => startLongPress('emoji')} onTouchEnd={() => cancelLongPress('emoji')}
-                  onClick={() => { if (!showTimerMenu) setInputValue(prev => prev + emoji); }} 
-                  className="text-2xl hover:scale-125 transition-transform p-3 active:scale-90"
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-            {/* Indicator current lifetime */}
-            <div className="absolute right-4 top-[-15px] bg-[#6A1B9A] text-white text-[9px] px-3 py-1 rounded-full font-black shadow-lg flex items-center gap-1.5 uppercase tracking-wider backdrop-blur-md">
-                <Timer size={10} /> {LIFETIME_OPTIONS.find(o => o.value === currentLifetime)?.label || '10s'}
-            </div>
-          </div>
-        )}
-
         <footer className="px-3 py-3 bg-white/5 backdrop-blur-md relative z-20">
           <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center bg-white rounded-full px-4 py-1.5 shadow-lg">
+            <div className="flex-1 flex items-center bg-white rounded-full px-4 py-1.5 shadow-lg relative">
               <button type="button" onClick={() => setShowEmojis(!showEmojis)} className={`transition-colors ${showEmojis ? 'text-[#6A1B9A]' : 'text-slate-400'}`}><Smile size={24} /></button>
               <input value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend(inputValue)} placeholder="Classified message..." className="flex-1 bg-transparent border-none outline-none py-2 px-3 text-slate-800 text-[16px]" />
               <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
               <button type="button" onClick={() => fileInputRef.current?.click()} className="text-slate-400 rotate-45 hover:text-[#6A1B9A] transition-colors"><Paperclip size={22} /></button>
+
+              {/* Indicator current lifetime inside input */}
+              <div className="absolute right-10 top-[-25px] bg-[#6A1B9A] text-white text-[8px] px-2 py-0.5 rounded-full font-black flex items-center gap-1 uppercase opacity-80 backdrop-blur-md border border-white/20">
+                   <Timer size={8} /> {LIFETIME_OPTIONS.find(o => o.value === currentLifetime)?.label}
+              </div>
             </div>
-            <button onMouseDown={() => startLongPress('send')} onMouseUp={() => cancelLongPress('send')} onMouseLeave={() => cancelLongPress('send')} onTouchStart={() => startLongPress('send')} onTouchEnd={() => cancelLongPress('send')} onClick={() => handleSend(inputValue)} type="button" className="w-12 h-12 rounded-full bg-[#6A1B9A] flex items-center justify-center text-white shadow-xl active:scale-90 transition-all">
-              <Send size={20} className="ml-1" />
+            <button 
+              onMouseDown={startLongPress} onMouseUp={cancelLongPress} onMouseLeave={cancelLongPress} onTouchStart={startLongPress} onTouchEnd={cancelLongPress}
+              onClick={() => { if (!showSettings) handleSend(inputValue); }} 
+              type="button" 
+              className="w-12 h-12 rounded-full bg-[#6A1B9A] flex items-center justify-center text-white shadow-xl active:scale-90 transition-all font-black text-xs"
+            >
+              <Send size={20} className="ml-0.5" />
             </button>
           </div>
         </footer>
+
+        {showEmojis && (
+            <AnimatePresence>
+                <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} className="grid grid-cols-6 gap-2 p-4 bg-white/95 backdrop-blur-md border-t border-white/10 select-none">
+                {CAT_EMOJIS.map(emoji => (
+                    <button key={emoji} type="button" onClick={() => setInputValue(prev => prev + emoji)} className="text-2xl hover:scale-125 transition-transform p-3 active:scale-90">{emoji}</button>
+                ))}
+                </motion.div>
+            </AnimatePresence>
+        )}
       </div>
 
       <AnimatePresence>
