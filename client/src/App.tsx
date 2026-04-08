@@ -1,17 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from '@supabase/supabase-js';
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Cat, Paperclip, Smile, CheckCheck, FileText, X, Timer, Settings, UserCircle, Edit3 } from "lucide-react";
+import { Send, Cat, Paperclip, Smile, CheckCheck, FileText, X, Timer, Settings, UserCircle, Edit3, Reply, PlayCircle } from "lucide-react";
 
 /**
- * 🐱 CATGRAM PRO - INTEGRATED FOOTER (NO BREAKING)
+ * 🐱 CATGRAM PRO - VIDEO SUPPORT & REPLY UPDATE
  */
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-const CAT_EMOJIS = ["🐱", "😸", "😹", "😻", "😼", "😽", "😾", "😿", "🙀", "🐾", "🐟", "🧶"];
+const ALL_EMOJIS = [
+    "🐱", "😸", "😹", "😻", "😼", "😽", "😾", "😿", "🙀", "🐾", 
+    "😀", "😂", "🤣", "😊", "😍", "😘", "😜", "🤨", "🤤", "😎", "🥳", "🥺", "💀", "💩", "👻", "🤡",
+    "😈", "👿", "👹", "👺", 
+    "😠", "😡", "🤬", "💢", "😤", 
+    "💦", "☔", "🌊", 
+    "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝",
+    "🔥", "✨", "🚀", "💯", "✅", "🎉", "🌈", "☀️", "❄️", "🍀", "💎", "💸", "👑", "🫦", "👀", "👋", "🙏"
+];
+
 const LIFETIME_OPTIONS = [
     { label: '5s', value: 5000 },
     { label: '10s', value: 10000 },
@@ -29,10 +38,11 @@ export default function App() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [showEmojis, setShowEmojis] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [expandedImage, setExpandedImage] = useState<string | null>(null);
+  const [expandedMedia, setExpandedMedia] = useState<any | null>(null);
   const [currentLifetime, setCurrentLifetime] = useState(() => Number(localStorage.getItem('catgram_lifetime')) || 10000);
   const [showSettings, setShowSettings] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [replyingTo, setReplyingTo] = useState<any | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -74,30 +84,31 @@ export default function App() {
     }
   };
 
-  const startLongPress = () => { longPressTimer.current = setTimeout(() => setShowSettings(true), 800); };
+  const startLongPress = (callback: () => void) => { longPressTimer.current = setTimeout(callback, 800); };
   const cancelLongPress = () => clearTimeout(longPressTimer.current);
 
   const handleSend = async (content: string, type = 'text', fileUrl?: string, fileName?: string) => {
     if (!content.trim() && !fileUrl) return;
-    await supabase.from('messages').insert([{ 
+    
+    const payload: any = { 
         content, sender_id: myId, sender_name: userName, type, file_url: fileUrl, file_name: fileName,
         expires_in: currentLifetime 
-    }]);
+    };
+
+    if (replyingTo) {
+        payload.reply_to_id = replyingTo.id;
+        payload.reply_to_name = replyingTo.sender_name;
+        if (replyingTo.type === 'image') payload.reply_to_content = 'Sent a photo 📸';
+        else if (replyingTo.type === 'video') payload.reply_to_content = 'Sent a video 📽️';
+        else payload.reply_to_content = replyingTo.content;
+        
+        payload.reply_to_image_url = (replyingTo.type === 'image' || replyingTo.type === 'video') ? replyingTo.file_url : null;
+    }
+
+    await supabase.from('messages').insert([payload]);
     setInputValue("");
     setShowEmojis(false);
-  };
-
-  const CountdownCircle = ({ createdAt, lifetime = 10000, color = "currentColor", size = 12 }) => {
-    const age = currentTime - new Date(createdAt).getTime();
-    const progress = Math.max(0, (lifetime - age) / lifetime);
-    return (
-      <div style={{ width: size, height: size }}>
-        <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
-          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(0,0,0,0.05)" strokeWidth="3" />
-          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" strokeDasharray={`${progress * 100}, 100`} />
-        </svg>
-      </div>
-    );
+    setReplyingTo(null);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -105,10 +116,17 @@ export default function App() {
     if (!file) return;
     setIsUploading(true);
     const fileName = `${Math.random()}.${file.name.split('.').pop()}`;
+    const fileType = file.type;
+    
     try {
       await supabase.storage.from('chat-files').upload(`uploads/${fileName}`, file);
       const { data: { publicUrl } } = supabase.storage.from('chat-files').getPublicUrl(`uploads/${fileName}`);
-      await handleSend(file.name, file.type.startsWith('image/') ? 'image' : 'file', publicUrl, file.name);
+      
+      let type = 'file';
+      if (fileType.startsWith('image/')) type = 'image';
+      else if (fileType.startsWith('video/')) type = 'video';
+      
+      await handleSend(file.name, type, publicUrl, file.name);
     } catch (error: any) { alert(`Upload failed: ${error.message}`); } finally { setIsUploading(false); }
   };
 
@@ -123,7 +141,7 @@ export default function App() {
         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full max-w-sm bg-white/20 backdrop-blur-3xl p-10 rounded-[4rem] shadow-2xl border border-white/20 flex flex-col items-center">
             <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center text-[#6A1B9A] mb-8"><Cat size={40} /></div>
             <h1 className="text-3xl font-black mb-10 italic uppercase tracking-tighter">CatGram</h1>
-            <input value={tempName} onChange={(e) => setTempName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveName()} placeholder="Enter nickname..." className="w-full bg-white/10 border border-white/20 rounded-3xl py-5 px-6 text-center text-xl outline-none placeholder:text-white/30 mb-6 font-medium" />
+            <input value={tempName} onChange={(e) => setTempName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveName()} placeholder="Nickname?" className="w-full bg-white/10 border border-white/20 rounded-3xl py-5 px-6 text-center text-xl outline-none placeholder:text-white/30 mb-6 font-medium" />
             <button onClick={saveName} className="w-full bg-white text-[#6A1B9A] font-black py-5 rounded-3xl shadow-xl hover:scale-105 active:scale-95 transition-all text-sm uppercase italic">Enter Vault</button>
         </motion.div>
       </div>
@@ -172,14 +190,50 @@ export default function App() {
             {activeMessages.map((msg, i) => {
               const isMe = msg.sender_id === myId;
               return (
-                <motion.div key={msg.id || i} initial={{ opacity: 0, scale: 0.9, x: isMe ? 20 : -20 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.5 }} className={`flex w-full flex-col mb-4 ${isMe ? 'items-end' : 'items-start'}`}>
+                <motion.div 
+                    key={msg.id || i} initial={{ opacity: 0, scale: 0.9, x: isMe ? 20 : -20 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.5 }} className={`flex w-full flex-col mb-4 ${isMe ? 'items-end' : 'items-start'}`}
+                    onMouseDown={() => !isMe && startLongPress(() => setReplyingTo(msg))} onMouseUp={cancelLongPress} onMouseLeave={cancelLongPress}
+                    onTouchStart={() => !isMe && startLongPress(() => setReplyingTo(msg))} onTouchEnd={cancelLongPress}
+                >
                   <span className={`text-[10px] font-black text-white/40 mb-1 ${isMe ? 'mr-1' : 'ml-1'} uppercase tracking-widest`}>{msg.sender_name}</span>
                   <div className={`relative p-2 rounded-2xl shadow-xl max-w-[90%] sm:max-w-xl ${isMe ? 'bg-[#E1FEC6] text-[#1a3a14] rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none'}`}>
-                    {msg.type === 'image' && msg.file_url && <img src={msg.file_url} alt="Vault" onClick={() => setExpandedImage(msg.id)} className="rounded-xl mb-1 max-w-full cursor-zoom-in" />}
+                    
+                    {msg.reply_to_name && (
+                        <div className="bg-black/5 rounded-xl p-2 mb-2 border-l-4 border-purple-500 text-[11px] opacity-70 italic flex items-center gap-3 justify-between overflow-hidden">
+                            <div className="truncate">
+                                <span className="font-bold block mb-1">@{msg.reply_to_name}</span>
+                                <span className="truncate block">{msg.reply_to_content}</span>
+                            </div>
+                            {msg.reply_to_image_url && (
+                                <div className="relative w-10 h-10 shrink-0">
+                                     <img src={msg.reply_to_image_url} className="w-full h-full rounded-lg object-cover opacity-60" alt="replied" />
+                                     {msg.reply_to_content.includes('video') && <div className="absolute inset-0 flex items-center justify-center text-white/50"><PlayCircle size={14}/></div>}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {msg.type === 'image' && msg.file_url && <img src={msg.file_url} alt="Vault" onClick={() => setExpandedMedia(msg)} className="rounded-xl mb-1 max-w-full cursor-zoom-in" />}
+                    
+                    {msg.type === 'video' && msg.file_url && (
+                        <div className="relative rounded-xl overflow-hidden mb-1 cursor-zoom-in" onClick={() => setExpandedMedia(msg)}>
+                            <video src={msg.file_url} className="max-w-full rounded-xl" muted playsInline />
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/20 text-white">
+                                <PlayCircle size={40} className="opacity-80" />
+                            </div>
+                        </div>
+                    )}
+
                     {msg.type === 'file' && msg.file_url && <div className="flex items-center gap-2 p-2 bg-black/5 rounded-xl mb-1"><FileText size={16} /><p className="text-[10px] truncate max-w-[100px]">{msg.file_name}</p></div>}
                     <p className="px-2 pt-1 pb-4 leading-snug font-medium whitespace-pre-wrap break-words">{msg.content}</p>
+                    
                     <div className="absolute bottom-2.5 right-3 flex items-center gap-1.5 opacity-30 text-[10px]">
-                      <CountdownCircle createdAt={msg.created_at} lifetime={msg.expires_in} color={isMe ? "#4CAD3E" : "#6A1B9A"} size={14} />
+                      <div style={{ width: 14, height: 14 }}>
+                        <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(0,0,0,0.05)" strokeWidth="3" />
+                          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke={isMe ? "#4CAD3E" : "#6A1B9A"} strokeWidth="4" strokeLinecap="round" strokeDasharray={`${Math.max(0, (msg.expires_in - (currentTime - new Date(msg.created_at).getTime())) / msg.expires_in) * 100}, 100`} />
+                        </svg>
+                      </div>
                       {isMe && <CheckCheck size={12} />}
                     </div>
                     <div className={`absolute top-0 w-3 h-3 ${isMe ? 'right-[-5px] bg-[#E1FEC6]' : 'left-[-5px] bg-white'}`} style={{ clipPath: isMe ? 'polygon(0 0, 0 100%, 100% 0)' : 'polygon(100% 0, 100% 100%, 0 0)' }} />
@@ -191,18 +245,45 @@ export default function App() {
           <div ref={messagesEndRef} />
         </main>
 
+        <AnimatePresence>
+            {replyingTo && (
+                <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="px-4 py-3 bg-white/30 backdrop-blur-3xl border-t border-white/10 flex items-center justify-between gap-4 z-50">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                        <Reply size={16} className="text-white shrink-0" />
+                        <div className="text-white text-xs truncate">
+                            <span className="font-bold opacity-60">Replying to {replyingTo.sender_name}</span>
+                            <p className="truncate italic opacity-80">{replyingTo.type === 'video' ? 'Sent a video 📽️' : replyingTo.type === 'image' ? 'Sent a photo 📸' : replyingTo.content}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        {(replyingTo.type === 'image' || replyingTo.type === 'video') && (
+                            <div className="relative w-10 h-10">
+                                {replyingTo.type === 'image' ? (
+                                    <img src={replyingTo.file_url} className="w-full h-full rounded-lg object-cover border border-white/20 opacity-80" alt="preview" />
+                                ) : (
+                                    <video src={replyingTo.file_url} className="w-full h-full rounded-lg object-cover border border-white/20 opacity-80" />
+                                )}
+                                {replyingTo.type === 'video' && <PlayCircle size={14} className="absolute inset-0 m-auto text-white/50" />}
+                            </div>
+                        )}
+                        <button onClick={() => setReplyingTo(null)} className="p-1.5 bg-white/10 rounded-full text-white hover:bg-white/20 transition-colors"><X size={14} /></button>
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+
         <footer className="px-2 py-4 bg-white/10 backdrop-blur-xl border-t border-white/10 w-full flex justify-center z-50">
           <div className="w-full max-w-5xl flex items-center gap-2">
             <div className="flex-1 flex items-center bg-white rounded-3xl px-4 py-2 shadow-xl relative">
               <button type="button" onClick={() => setShowEmojis(!showEmojis)} className={`transition-colors ${showEmojis ? 'text-[#6A1B9A]' : 'text-slate-400'}`}><Smile size={24} /></button>
               <input value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend(inputValue)} placeholder="Message..." className="flex-1 bg-transparent border-none outline-none py-2 px-2 text-slate-800 text-[15px]" />
-              <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+              <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*,video/*" className="hidden" />
               <button type="button" onClick={() => fileInputRef.current?.click()} className="text-slate-400 rotate-45 hover:text-[#6A1B9A] transition-all"><Paperclip size={24} /></button>
               <div className="absolute right-12 top-[-10px] bg-[#6A1B9A] text-[8px] px-2 py-0.5 rounded-full font-black text-white uppercase tracking-widest border border-white/20 shadow-lg">
                    {LIFETIME_OPTIONS.find(o => o.value === currentLifetime)?.label}
               </div>
             </div>
-            <button onMouseDown={startLongPress} onMouseUp={cancelLongPress} onMouseLeave={cancelLongPress} onTouchStart={startLongPress} onTouchEnd={cancelLongPress} onClick={() => { if (!showSettings) handleSend(inputValue); }} type="button" className="w-12 h-12 rounded-full bg-[#6A1B9A] flex-shrink-0 flex items-center justify-center text-white shadow-xl hover:bg-[#4A148C] active:scale-90 transition-all">
+            <button onMouseDown={() => startLongPress(() => setShowSettings(true))} onMouseUp={cancelLongPress} onMouseLeave={cancelLongPress} onTouchStart={() => startLongPress(() => setShowSettings(true))} onTouchEnd={cancelLongPress} onClick={() => { if (!showSettings) handleSend(inputValue); }} type="button" className="w-12 h-12 rounded-full bg-[#6A1B9A] flex-shrink-0 flex items-center justify-center text-white shadow-xl hover:bg-[#4A148C] active:scale-90 transition-all">
               <Send size={22} className="ml-1" />
             </button>
           </div>
@@ -210,10 +291,10 @@ export default function App() {
 
         {showEmojis && (
             <AnimatePresence>
-                <div className="w-full flex justify-center bg-white blur-none border-t border-white/10 z-[60]">
+                <div className="w-full flex justify-center bg-white border-t border-white/10 z-[60] overflow-y-auto max-h-[300px]">
                     <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} className="w-full max-w-5xl grid grid-cols-6 sm:grid-cols-12 gap-1 p-4 select-none">
-                    {CAT_EMOJIS.map(emoji => (
-                        <button key={emoji} type="button" onClick={() => setInputValue(prev => prev + emoji)} className="text-2xl hover:scale-125 transition-transform p-3 active:scale-90">{emoji}</button>
+                    {ALL_EMOJIS.map(emoji => (
+                        <button key={emoji} type="button" onClick={() => setInputValue(prev => prev + emoji)} className="text-3xl hover:scale-125 transition-transform p-3 active:scale-90">{emoji}</button>
                     ))}
                     </motion.div>
                 </div>
@@ -222,13 +303,25 @@ export default function App() {
       </div>
 
       <AnimatePresence>
-        {expandedImage && activeMessages.find(m => m.id === expandedImage) && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-6 cursor-pointer" onClick={() => setExpandedImage(null)}>
+        {expandedMedia && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-6 cursor-pointer" onClick={() => setExpandedMedia(null)}>
             <div className="absolute top-10 flex flex-col items-center gap-3">
-               <CountdownCircle createdAt={activeMessages.find(m => m.id === expandedImage).created_at} lifetime={activeMessages.find(m => m.id === expandedImage).expires_in} color="#FFF" size={40} />
-               <p className="text-white/20 text-[10px] uppercase font-black tracking-[0.5em]">Viewing Confidential Data</p>
+               <div style={{ width: 40, height: 40 }}>
+                <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="3" />
+                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#FFF" strokeWidth="4" strokeLinecap="round" strokeDasharray={`${Math.max(0, (expandedMedia.expires_in - (currentTime - new Date(expandedMedia.created_at).getTime())) / expandedMedia.expires_in) * 100}, 100`} />
+                </svg>
+               </div>
+               <p className="text-white/20 text-[10px] uppercase font-black tracking-[0.5em]">Secret File Preview</p>
             </div>
-            <motion.img initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} src={activeMessages.find(m => m.id === expandedImage).file_url} className="max-w-full max-h-[75vh] rounded-[3rem] shadow-2xl" />
+            
+            <div onClick={(e) => e.stopPropagation()}>
+                {expandedMedia.type === 'image' ? (
+                    <motion.img initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} src={expandedMedia.file_url} className="max-w-full max-h-[75vh] rounded-[3rem] shadow-2xl" />
+                ) : (
+                    <motion.video initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} src={expandedMedia.file_url} controls autoPlay className="max-w-full max-h-[75vh] rounded-[3rem] shadow-2xl" />
+                )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
