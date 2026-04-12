@@ -53,7 +53,12 @@ export default function App() {
   const [inputValue, setInputValue] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [expandedMedia, setExpandedMedia] = useState<any | null>(null);
-  const [currentLifetime, setCurrentLifetime] = useState(() => Number(localStorage.getItem('catgram_lifetime')) || 10000);
+  const [currentLifetime, setCurrentLifetime] = useState(() => {
+    let val = Number(localStorage.getItem('catgram_lifetime'));
+    if (!val || isNaN(val)) return 10000;
+    // Sanitize: if value is < 1000, it's likely seconds. Convert to ms.
+    return val < 1000 ? val * 1000 : val;
+  });
   const [wallpaper, setWallpaper] = useState(() => localStorage.getItem('catgram_wallpaper') || WALLPAPERS[0].class);
   const [showSettings, setShowSettings] = useState(false);
   const [replyingTo, setReplyingTo] = useState<any | null>(null);
@@ -75,6 +80,8 @@ export default function App() {
     return id;
   });
 
+  const channelRef = useRef<any>(null);
+
   useEffect(() => {
     const itv = setInterval(() => setCurrentTime(Date.now()), 1000);
     return () => clearInterval(itv);
@@ -85,19 +92,27 @@ export default function App() {
 
     const fetchMsgs = async () => {
       const { data } = await supabase.from('messages').select('*').eq('room_id', GLOBAL_ROOM_ID).order('created_at', { ascending: true });
-      if (data) setMessages(data);
+      if (data) {
+        const now = Date.now();
+        setMessages(data.map(m => {
+          const serverTime = new Date(m.created_at).getTime();
+          const serverAge = now - serverTime;
+          const lifetime = m.expires_in || 10000;
+          const normalizedLifetime = lifetime < 1000 ? lifetime * 1000 : lifetime;
+          return { ...m, _expires_at: now + Math.max(0, normalizedLifetime - serverAge) };
+        }));
+      }
     };
     fetchMsgs();
 
-    const channel = supabase.channel(`global_vault`)
+    const channel = supabase.channel(GLOBAL_ROOM_ID)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
         if (payload.new.room_id === GLOBAL_ROOM_ID) {
-            setMessages(prev => [...prev.filter(m => m.id !== payload.new.id), payload.new]);
-            if (payload.new.sender_id !== myId) playSound('received');
+            handleIncomingMessage(payload.new);
         }
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
-        setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m));
+      .on('broadcast', { event: 'new_msg' }, (payload) => {
+          handleIncomingMessage(payload.payload);
       })
       .on('broadcast', { event: 'typing' }, (payload) => {
         if (payload.payload.user === userName) return;
@@ -105,12 +120,37 @@ export default function App() {
       })
       .subscribe();
 
+    channelRef.current = channel;
     return () => { supabase.removeChannel(channel); };
   }, [userName]);
 
+  const handleIncomingMessage = (msg: any) => {
+      setMessages(prev => {
+          if (prev.some(m => m.id === msg.id)) return prev;
+          
+          const lifetime = msg.expires_in || 10000;
+          const normalizedLifetime = lifetime < 1000 ? lifetime * 1000 : lifetime;
+          const newMsg = { 
+              ...msg, 
+              _expires_at: Date.now() + normalizedLifetime 
+          };
+
+          if (newMsg.sender_id === myId) {
+              const tempIndex = prev.findIndex(m => String(m.id).startsWith('temp_') && m.content === newMsg.content);
+              if (tempIndex !== -1) {
+                  const next = [...prev];
+                  next[tempIndex] = newMsg;
+                  return next;
+              }
+          }
+          return [...prev, newMsg];
+      });
+      if (msg.sender_id !== myId) playSound('received');
+  };
+
   const toggleTyping = useCallback((isTyping: boolean) => {
-    if (!userName) return;
-    supabase.channel(`global_vault`).send({
+    if (!userName || !channelRef.current) return;
+    channelRef.current.send({
       type: 'broadcast', event: 'typing', payload: { user: userName, isTyping }
     });
   }, [userName]);
@@ -120,19 +160,72 @@ export default function App() {
 
   const handleSend = async (content: string, type = 'text', fileUrl?: string, fileName?: string, forcedExp?: number) => {
     if ((!content.trim() && !fileUrl)) return;
+    
+    const tempId = 'temp_' + Date.now();
     const payload: any = { 
-        content, sender_id: myId, sender_name: userName, type, file_url: fileUrl, file_name: fileName,
-        expires_in: forcedExp || currentLifetime, reactions: [], room_id: GLOBAL_ROOM_ID
+        id: tempId,
+        content, 
+        sender_id: myId, 
+        sender_name: userName, 
+        type, 
+        file_url: fileUrl, 
+        file_name: fileName,
+        expires_in: forcedExp || currentLifetime, 
+        reactions: [], 
+        room_id: GLOBAL_ROOM_ID,
+        created_at: new Date().toISOString(),
+        _local_arrival: Date.now() // Track local arrival for countdown
     };
+    
     if (replyingTo) {
         payload.reply_to_id = replyingTo.id;
         payload.reply_to_name = replyingTo.sender_name;
         payload.reply_to_content = replyingTo.type === 'image' || replyingTo.type === 'snap' ? 'Photo 📸' : replyingTo.type === 'video' ? 'Video 📽️' : replyingTo.content;
         payload.reply_to_image_url = (replyingTo.type === 'image' || replyingTo.type === 'snap' || replyingTo.type === 'video') ? replyingTo.file_url : null;
     }
-    await supabase.from('messages').insert([payload]);
-    setInputValue(""); setShowEmojis(false); setReplyingTo(null); toggleTyping(false);
+
+    const lifetime = payload.expires_in;
+    payload._expires_at = Date.now() + (lifetime < 1000 ? lifetime * 1000 : lifetime);
+
+    // Optimistic Update
+    setMessages(prev => [...prev, payload]);
+    setInputValue(""); 
+    setShowEmojis(false); 
+    setReplyingTo(null); 
+    toggleTyping(false);
     playSound('sent');
+
+    try {
+      const { data, error } = await supabase.from('messages').insert([{
+          content,
+          sender_id: myId,
+          sender_name: userName,
+          type,
+          file_url: fileUrl,
+          file_name: fileName,
+          expires_in: payload.expires_in,
+          room_id: GLOBAL_ROOM_ID,
+          reactions: [],
+          reply_to_id: payload.reply_to_id,
+          reply_to_name: payload.reply_to_name,
+          reply_to_content: payload.reply_to_content,
+          reply_to_image_url: payload.reply_to_image_url
+      }]).select();
+
+      if (error) throw error;
+      
+      if (data?.[0]) {
+        setMessages(prev => prev.map(m => m.id === tempId ? { ...data[0], _expires_at: m._expires_at } : m));
+        // Also broadcast the message for low-latency delivery
+        channelRef.current?.send({
+          type: 'broadcast',
+          event: 'new_msg',
+          payload: data[0]
+        });
+      }
+    } catch (err) {
+      console.error("Send Error:", err);
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, isSnap = false) => {
@@ -147,7 +240,15 @@ export default function App() {
     } catch (err) { console.error("Upload Error"); } finally { setIsUploading(false); }
   };
 
-  const activeMessages = (messages || []).filter(msg => (currentTime - new Date(msg.created_at).getTime()) < (msg.expires_in || 10000));
+  const activeMessages = (messages || []).filter(msg => {
+    if (!msg._expires_at) {
+        const lifetime = msg.expires_in || 10000;
+        const normalizedLifetime = lifetime < 1000 ? lifetime * 1000 : lifetime;
+        const serverAge = Date.now() - new Date(msg.created_at).getTime();
+        msg._expires_at = Date.now() + Math.max(0, normalizedLifetime - serverAge);
+    }
+    return currentTime < msg._expires_at;
+  });
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [activeMessages.length]);
 
   return (
@@ -187,7 +288,12 @@ export default function App() {
                                 {!isSnap && msg.type === 'video' && <div className="relative rounded-[1.5rem] overflow-hidden mb-1"><video src={msg.file_url} className="max-w-full" /><div className="absolute inset-0 flex items-center justify-center bg-black/10 transition-colors group-hover:bg-black/20"><PlayCircle size={40} className="text-white/80"/></div></div>}
                                 {isSnap ? <div className="flex items-center gap-3 px-1 py-1"><Eye size={24} /><span className="font-black text-2xl uppercase tracking-tighter italic">Photos</span></div> : <p className="px-2 pb-5 leading-tight font-bold text-[18px] whitespace-pre-wrap">{msg.content}</p>}
                                 <div className="absolute bottom-2.5 right-4 flex items-center gap-2 opacity-20 text-[10px]">
-                                    <svg viewBox="0 0 36 36" className="w-4 h-4 -rotate-90"><path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(0,0,0,0.1)" strokeWidth="3" /><path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="4" strokeDasharray={`${Math.max(0, (msg.expires_in - (currentTime - new Date(msg.created_at).getTime())) / msg.expires_in) * 100}, 100`} /></svg>
+                                    <svg viewBox="0 0 36 36" className="w-4 h-4 -rotate-90">
+                                        <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(0,0,0,0.1)" strokeWidth="3" />
+                                        <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="4" 
+                                            strokeDasharray={`${Math.max(0, (msg._expires_at - currentTime) / (msg.expires_in < 1000 ? msg.expires_in * 1000 : msg.expires_in || 10000)) * 100}, 100`} 
+                                        />
+                                    </svg>
                                     {isMe && <CheckCheck size={11} />}
                                 </div>
                             </div>
