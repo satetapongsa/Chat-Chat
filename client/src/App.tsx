@@ -5,33 +5,22 @@ import {
   Send, Cat, Paperclip, Smile, CheckCheck, X, Timer, 
   Settings, UserCircle, Edit3, Reply, PlayCircle, Volume2, Camera, Palette, Eye,
   ArrowLeft, Plus, Lock, Hash, Search, Zap, Loader2, AlertCircle, CheckCircle2,
-  ChevronRight, LogOut, UserMinus, RefreshCw
+  ChevronRight, LogOut, UserMinus, RefreshCw, Database
 } from "lucide-react";
 
 /**
- * 🐱 CATGRAM ULTIMATE - UNIFIED VAULT SETTINGS (SMART FIT EDITION)
+ * 🐱 CATGRAM ULTIMATE - REDESIGNED WITH LOGO & SYSTEM CHECK
  */
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const isSupabaseConfigured = supabaseUrl && supabaseAnonKey;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const GLOBAL_ROOM_ID = "catgram-global-vault";
 
 const ALL_EMOJIS = [
     "🐱", "😸", "😹", "😻", "😼", "😽", "😾", "😀", "😂", "🤣", "😊", "😍", "😘", "😜", "🤨", "🤤", "😎", "🥳", "🥺", "💀", "💩", "😈", "💦", "❤️", "🔥", "🚀", "💯", "💎", "🫦", "👀", "👋", "🙏", "✅", "🌈", "☀️", "❄️", "🍀", "🍕", "🍔", "🍦", "🍺", "🍄"
-];
-
-const WALLPAPERS = [
-  { name: 'Neon Dreams', class: 'from-[#FF0080] via-[#7928CA] to-[#FF0080]' },
-  { name: 'Sunset Vibe', class: 'from-[#FF4D4D] via-[#F9CB28] to-[#FF4D4D]' },
-  { name: 'Tropical Mix', class: 'from-[#00DFD8] via-[#007CF0] to-[#00DFD8]' },
-  { name: 'Alien Aurora', class: 'from-[#a2ff00] via-[#00a2ff] to-[#a2ff00]' }
-];
-
-const LIFETIME_OPTIONS = [
-    { label: '5s', value: 5000 }, { label: '10s', value: 10000 }, { label: '20s', value: 20000 },
-    { label: '30s', value: 30000 }, { label: '1m', value: 60000 }, { label: '2m', value: 120000 }
 ];
 
 const playSound = (type: 'sent' | 'received') => {
@@ -51,15 +40,10 @@ export default function App() {
   const [tempName, setTempName] = useState("");
   const [messages, setMessages] = useState<any[]>([]);
   const [inputValue, setInputValue] = useState("");
+  const [editingMessage, setEditingMessage] = useState<any | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [expandedMedia, setExpandedMedia] = useState<any | null>(null);
-  const [currentLifetime, setCurrentLifetime] = useState(() => {
-    let val = Number(localStorage.getItem('catgram_lifetime'));
-    if (!val || isNaN(val)) return 10000;
-    // Sanitize: if value is < 1000, it's likely seconds. Convert to ms.
-    return val < 1000 ? val * 1000 : val;
-  });
-  const [wallpaper, setWallpaper] = useState(() => localStorage.getItem('catgram_wallpaper') || WALLPAPERS[0].class);
+  const [wallpaper, setWallpaper] = useState('from-zinc-900 via-black to-zinc-900');
   const [showSettings, setShowSettings] = useState(false);
   const [replyingTo, setReplyingTo] = useState<any | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -93,14 +77,7 @@ export default function App() {
     const fetchMsgs = async () => {
       const { data } = await supabase.from('messages').select('*').eq('room_id', GLOBAL_ROOM_ID).order('created_at', { ascending: true });
       if (data) {
-        const now = Date.now();
-        setMessages(data.map(m => {
-          const serverTime = new Date(m.created_at).getTime();
-          const serverAge = now - serverTime;
-          const lifetime = m.expires_in || 10000;
-          const normalizedLifetime = lifetime < 1000 ? lifetime * 1000 : lifetime;
-          return { ...m, _expires_at: now + Math.max(0, normalizedLifetime - serverAge) };
-        }));
+        setMessages(data);
       }
     };
     fetchMsgs();
@@ -110,6 +87,12 @@ export default function App() {
         if (payload.new.room_id === GLOBAL_ROOM_ID) {
             handleIncomingMessage(payload.new);
         }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
+        setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m));
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, (payload) => {
+        setMessages(prev => prev.filter(m => m.id !== payload.old.id));
       })
       .on('broadcast', { event: 'new_msg' }, (payload) => {
           handleIncomingMessage(payload.payload);
@@ -128,22 +111,15 @@ export default function App() {
       setMessages(prev => {
           if (prev.some(m => m.id === msg.id)) return prev;
           
-          const lifetime = msg.expires_in || 10000;
-          const normalizedLifetime = lifetime < 1000 ? lifetime * 1000 : lifetime;
-          const newMsg = { 
-              ...msg, 
-              _expires_at: Date.now() + normalizedLifetime 
-          };
-
-          if (newMsg.sender_id === myId) {
-              const tempIndex = prev.findIndex(m => String(m.id).startsWith('temp_') && m.content === newMsg.content);
+          if (msg.sender_id === myId) {
+              const tempIndex = prev.findIndex(m => String(m.id).startsWith('temp_') && m.content === msg.content);
               if (tempIndex !== -1) {
                   const next = [...prev];
-                  next[tempIndex] = newMsg;
+                  next[tempIndex] = msg;
                   return next;
               }
           }
-          return [...prev, newMsg];
+          return [...prev, msg];
       });
       if (msg.sender_id !== myId) playSound('received');
   };
@@ -158,7 +134,51 @@ export default function App() {
   const startLongPress = (callback: () => void) => { longPressTimer.current = setTimeout(callback, 800); };
   const cancelLongPress = () => clearTimeout(longPressTimer.current);
 
-  const handleSend = async (content: string, type = 'text', fileUrl?: string, fileName?: string, forcedExp?: number) => {
+  const handleReaction = async (msg: any, emoji = '❤️') => {
+    const reactions = msg.reactions || [];
+    const existing = reactions.find((r: any) => r.user_id === myId);
+    let newReactions;
+    if (existing) {
+      newReactions = reactions.filter((r: any) => r.user_id !== myId);
+    } else {
+      newReactions = [...reactions, { user_id: myId, emoji }];
+    }
+
+    setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, reactions: newReactions } : m));
+    
+    try {
+      await supabase.from('messages').update({ reactions: newReactions }).eq('id', msg.id);
+    } catch (err) {}
+  };
+
+  const handleDelete = async (id: string) => {
+    setMessages(prev => prev.filter(m => m.id !== id));
+    try {
+      await supabase.from('messages').delete().eq('id', id);
+    } catch (err) {}
+  };
+
+  const handleEdit = async (msg: any) => {
+    setEditingMessage(msg);
+    setInputValue(msg.content);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingMessage || !inputValue.trim()) return;
+    const oldMsg = editingMessage;
+    setMessages(prev => prev.map(m => m.id === oldMsg.id ? { ...m, content: inputValue } : m));
+    setEditingMessage(null);
+    setInputValue("");
+    try {
+      await supabase.from('messages').update({ content: inputValue }).eq('id', oldMsg.id);
+    } catch (err) {}
+  };
+
+  const handleSend = async (content: string, type = 'text', fileUrl?: string, fileName?: string) => {
+    if (editingMessage) {
+        handleUpdate();
+        return;
+    }
     if ((!content.trim() && !fileUrl)) return;
     
     const tempId = 'temp_' + Date.now();
@@ -170,11 +190,9 @@ export default function App() {
         type, 
         file_url: fileUrl, 
         file_name: fileName,
-        expires_in: forcedExp || currentLifetime, 
         reactions: [], 
         room_id: GLOBAL_ROOM_ID,
-        created_at: new Date().toISOString(),
-        _local_arrival: Date.now() // Track local arrival for countdown
+        created_at: new Date().toISOString()
     };
     
     if (replyingTo) {
@@ -183,9 +201,6 @@ export default function App() {
         payload.reply_to_content = replyingTo.type === 'image' || replyingTo.type === 'snap' ? 'Photo 📸' : replyingTo.type === 'video' ? 'Video 📽️' : replyingTo.content;
         payload.reply_to_image_url = (replyingTo.type === 'image' || replyingTo.type === 'snap' || replyingTo.type === 'video') ? replyingTo.file_url : null;
     }
-
-    const lifetime = payload.expires_in;
-    payload._expires_at = Date.now() + (lifetime < 1000 ? lifetime * 1000 : lifetime);
 
     // Optimistic Update
     setMessages(prev => [...prev, payload]);
@@ -203,7 +218,6 @@ export default function App() {
           type,
           file_url: fileUrl,
           file_name: fileName,
-          expires_in: payload.expires_in,
           room_id: GLOBAL_ROOM_ID,
           reactions: [],
           reply_to_id: payload.reply_to_id,
@@ -215,8 +229,7 @@ export default function App() {
       if (error) throw error;
       
       if (data?.[0]) {
-        setMessages(prev => prev.map(m => m.id === tempId ? { ...data[0], _expires_at: m._expires_at } : m));
-        // Also broadcast the message for low-latency delivery
+        setMessages(prev => prev.map(m => m.id === tempId ? data[0] : m));
         channelRef.current?.send({
           type: 'broadcast',
           event: 'new_msg',
@@ -236,179 +249,478 @@ export default function App() {
     try {
       await supabase.storage.from('chat-files').upload(`uploads/${fileName}`, file);
       const { data: { publicUrl } } = supabase.storage.from('chat-files').getPublicUrl(`uploads/${fileName}`);
-      await handleSend(isSnap ? "Photos" : file.name, isSnap ? 'snap' : file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file', publicUrl, file.name, isSnap ? 10000 : undefined);
+      await handleSend(isSnap ? "Photo" : file.name, isSnap ? 'snap' : file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file', publicUrl, file.name);
     } catch (err) { console.error("Upload Error"); } finally { setIsUploading(false); }
   };
 
-  const activeMessages = (messages || []).filter(msg => {
-    if (!msg._expires_at) {
-        const lifetime = msg.expires_in || 10000;
-        const normalizedLifetime = lifetime < 1000 ? lifetime * 1000 : lifetime;
-        const serverAge = Date.now() - new Date(msg.created_at).getTime();
-        msg._expires_at = Date.now() + Math.max(0, normalizedLifetime - serverAge);
-    }
-    return currentTime < msg._expires_at;
-  });
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [activeMessages.length]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
   return (
-    <div className="h-[100dvh] w-full bg-[#050505] flex items-center justify-center font-sans overflow-hidden">
-      
-      {/* UNIVERSAL MASTER FRAME */}
-      <div 
-        className={`relative w-full h-[100dvh] sm:max-w-xl bg-zinc-950 flex flex-col overflow-hidden transition-all shadow-2xl z-10 sm:border-x border-white/5`}
-        style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}
-      >
-        
-        {/* GLOBAL DYNAMIC ATMOSPHERE */}
-        <div className={`absolute inset-0 bg-gradient-to-br ${wallpaper} opacity-30 pointer-events-none z-0`} />
+        <div className="h-[100dvh] w-full bg-background flex overflow-hidden text-foreground">
+      <AnimatePresence mode="wait">
+        {!userName ? (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            key="login" 
+            className="flex-1 flex flex-col items-center justify-center p-6 text-center z-10 w-full relative"
+          >
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--color-primary)_0%,_transparent_70%)] opacity-10 pointer-events-none" />
+            
+            <motion.div 
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="space-y-8 w-full max-w-md"
+            >
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-32 h-32 bg-primary/10 rounded-[2.5rem] flex items-center justify-center premium-shadow overflow-hidden p-2">
+                  <img src="/logo.png" alt="CatGram Logo" className="w-full h-full object-contain animate-float" />
+                </div>
+                <h1 className="text-6xl font-black tracking-tighter text-white uppercase italic">
+                  CatGram
+                </h1>
+                <p className="text-muted-foreground font-medium">Direct Messaging. Photos. Stories.</p>
+              </div>
 
-        <AnimatePresence mode="wait">
-          {!userName ? (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="login" className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-12 z-10 w-full relative">
-                <h1 className="text-5xl sm:text-7xl font-black italic tracking-tighter text-white uppercase whitespace-nowrap">CatGram</h1>
-                <div className="w-full max-w-sm space-y-4">
-                    <input value={tempName} onChange={e=>setTempName(e.target.value)} onKeyDown={e=>e.key==='Enter' && tempName.trim() && (localStorage.setItem('catgram_user_name', tempName.trim()), setUserName(tempName.trim()))} placeholder="Choose Identity" className="w-full bg-white/5 border border-white/10 p-6 rounded-[3rem] text-center text-white font-bold outline-none text-xl" />
-                    <button onClick={() => { if(tempName.trim()){ localStorage.setItem('catgram_user_name', tempName.trim()); setUserName(tempName.trim()); } }} className="w-full bg-white text-black py-6 rounded-[3rem] font-black uppercase tracking-widest active:scale-95 transition-all text-lg shadow-2xl">Enter Chat</button>
+              {!isSupabaseConfigured && (
+                <div className="bg-destructive/10 border border-destructive/20 rounded-2xl p-4 flex items-start gap-3 text-left">
+                  <AlertCircle className="text-destructive shrink-0 mt-0.5" size={18} />
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-destructive uppercase tracking-widest">Database Error</p>
+                    <p className="text-[10px] text-destructive-foreground/60 leading-relaxed">
+                      Supabase configuration is missing. Please add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b> to your <b>.env</b> file.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+                <div className="space-y-4">
+                  <input 
+                    value={tempName} 
+                    onChange={e=>setTempName(e.target.value)} 
+                    onKeyDown={e=>{
+                      if(e.key==='Enter' && tempName.trim()){
+                        if(messages.some(m => m.sender_name === tempName.trim() && m.sender_id !== myId)) {
+                          alert("This name is already taken by another active user.");
+                        } else {
+                          localStorage.setItem('catgram_user_name', tempName.trim());
+                          setUserName(tempName.trim());
+                        }
+                      }
+                    }} 
+                    placeholder="Enter your unique alias" 
+                    className="w-full glass-input p-5 rounded-2xl text-center text-white font-bold text-xl" 
+                  />
+                  <button 
+                    onClick={() => { 
+                      if(tempName.trim()){ 
+                        if(messages.some(m => m.sender_name === tempName.trim() && m.sender_id !== myId)) {
+                          alert("This name is already taken by another active user.");
+                        } else {
+                          localStorage.setItem('catgram_user_name', tempName.trim());
+                          setUserName(tempName.trim());
+                        }
+                      } 
+                    }} 
+                    className="w-full bg-primary hover:bg-primary/90 text-white py-5 rounded-2xl font-black uppercase tracking-widest active:scale-[0.98] transition-all text-lg shadow-xl"
+                  >
+                    Join the Vault
+                  </button>
                 </div>
             </motion.div>
-          ) : (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="chat" className="flex-1 flex flex-col h-full z-10 overflow-hidden w-full relative">
-                <main className="flex-1 overflow-y-auto px-2 pt-10 pb-6 space-y-6 custom-scrollbar relative z-10 w-full">
-                    <AnimatePresence mode="popLayout">
-                    {activeMessages.map((msg, i) => {
-                        const isMe = msg.sender_id === myId;
-                        const isSnap = msg.type === 'snap';
-                        return (
-                        <motion.div key={msg.id || i} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.5 }} className={`flex w-full flex-col mb-4 ${isMe ? 'items-end' : 'items-start'}`} onDoubleClick={() => setReplyingTo(msg)}>
-                            <span className="text-[10px] font-bold text-white/15 mb-1.5 uppercase tracking-widest px-5 italic">{msg.sender_name}</span>
-                            <div onClick={() => isSnap && setExpandedMedia(msg)} className={`relative p-5 shadow-2xl max-w-[92%] group cursor-pointer transition-all ${isMe ? 'bg-white text-slate-900 rounded-l-[2.5rem] rounded-tr-none' : 'bg-[#D1F9B3] text-[#122A09] rounded-r-[2.5rem] rounded-tl-none'}`} style={{ marginInline: isMe ? '0 0.25rem' : '0.25rem 0' }}>
-                                {msg.reply_to_name && <div className="bg-black/5 rounded-[1.2rem] p-3 mb-2 border-l-4 border-purple-500 text-[11px] opacity-70 flex gap-2 items-center"><div className="truncate"><span className="font-bold">@{msg.reply_to_name}</span><p className="truncate italic">{msg.reply_to_content}</p></div></div>}
-                                {!isSnap && msg.type === 'image' && <img src={msg.file_url} className="rounded-[1.5rem] mb-1 max-w-full" />}
-                                {!isSnap && msg.type === 'video' && <div className="relative rounded-[1.5rem] overflow-hidden mb-1"><video src={msg.file_url} className="max-w-full" /><div className="absolute inset-0 flex items-center justify-center bg-black/10 transition-colors group-hover:bg-black/20"><PlayCircle size={40} className="text-white/80"/></div></div>}
-                                {isSnap ? <div className="flex items-center gap-3 px-1 py-1"><Eye size={24} /><span className="font-black text-2xl uppercase tracking-tighter italic">Photos</span></div> : <p className="px-2 pb-5 leading-tight font-bold text-[18px] whitespace-pre-wrap">{msg.content}</p>}
-                                <div className="absolute bottom-2.5 right-4 flex items-center gap-2 opacity-20 text-[10px]">
-                                    <svg viewBox="0 0 36 36" className="w-4 h-4 -rotate-90">
-                                        <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(0,0,0,0.1)" strokeWidth="3" />
-                                        <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="4" 
-                                            strokeDasharray={`${Math.max(0, (msg._expires_at - currentTime) / (msg.expires_in < 1000 ? msg.expires_in * 1000 : msg.expires_in || 10000)) * 100}, 100`} 
-                                        />
-                                    </svg>
-                                    {isMe && <CheckCheck size={11} />}
-                                </div>
-                            </div>
-                        </motion.div>
-                        );
-                    })}
-                    </AnimatePresence>
-                    <div ref={messagesEndRef} />
-                </main>
+          </motion.div>
+        ) : (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            key="chat" 
+            className="flex-1 flex h-full z-10 overflow-hidden w-full relative"
+          >
+            {/* Atmosphere Background */}
+            <div className={`absolute inset-0 bg-gradient-to-br ${wallpaper} opacity-[0.03] pointer-events-none z-0`} />
+            
+            {/* Sidebar - Visible on Desktop */}
+            <aside className="hidden lg:flex w-80 border-r border-white/5 bg-black/20 backdrop-blur-md flex-col p-6 space-y-8">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center overflow-hidden p-1.5">
+                  <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+                </div>
+                <span className="font-black text-xl tracking-tight italic uppercase">CatGram</span>
+              </div>
 
-                <footer className="pb-10 bg-black/60 backdrop-blur-3xl border-t border-white/5 flex flex-col items-center relative z-20 shrink-0">
-                    <div className="flex w-full px-6 pt-2 justify-between items-center opacity-20 h-4">
-                        {typingUsers.length > 0 ? (
-                            <p className="text-[9px] text-green-400 font-bold animate-pulse uppercase tracking-[0.2em]">Signals Detected...</p>
-                        ) : null}
-                        {isUploading && <Loader2 size={12} className="animate-spin text-white"/>}
+              <div className="flex-1 space-y-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground px-2">Active Vault</div>
+                <button className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 text-left">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-sm">GV</div>
+                  <div className="flex-1 overflow-hidden">
+                    <div className="font-bold text-sm truncate">Global Vault</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{messages.length} messages</div>
+                  </div>
+                </button>
+              </div>
+
+              <div className="pt-6 border-t border-white/5 space-y-4">
+                <button 
+                  onClick={() => setShowSettings(true)}
+                  className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 transition-colors text-left group"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-muted-foreground group-hover:text-white transition-colors">
+                    <Settings size={20} />
+                  </div>
+                  <span className="font-bold text-sm">Vault Settings</span>
+                </button>
+                <button 
+                  onClick={() => { localStorage.removeItem('catgram_user_name'); setUserName(null); }}
+                  className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-destructive/10 transition-colors text-left group"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-muted-foreground group-hover:text-destructive transition-colors">
+                    <LogOut size={20} />
+                  </div>
+                  <span className="font-bold text-sm group-hover:text-destructive transition-colors">Leave Session</span>
+                </button>
+              </div>
+            </aside>
+
+            {/* Main Chat Area */}
+            <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+              {/* Header */}
+              <header className="h-20 border-b border-white/5 bg-background/50 backdrop-blur-xl flex items-center justify-between px-6 z-20 shrink-0">
+                <div className="flex items-center gap-4">
+                  <div className="lg:hidden w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center" onClick={() => setShowSettings(true)}>
+                    <Settings size={20} className="text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="font-black text-lg tracking-tight">Global Vault</h2>
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Active Connection</span>
                     </div>
-                    <AnimatePresence>{replyingTo && (
-                        <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} className="w-full px-6 py-3 bg-white/5 border-b border-white/10 flex items-center justify-between text-white text-[11px] mb-1">
-                            <div className="truncate opacity-50 flex items-center gap-3"><Reply size={16}/> {replyingTo.sender_name}: {replyingTo.content}</div>
-                            <X size={16} onClick={() => setReplyingTo(null)} className="cursor-pointer hover:text-red-400 transition-colors"/>
-                        </motion.div>
-                    )}</AnimatePresence>
-                    <div className="w-full flex items-center gap-3 px-4 pt-4">
-                        <div className="flex-1 flex items-center bg-white rounded-[3rem] px-5 py-2.5 shadow-2xl relative">
-                            <button onClick={() => setShowEmojis(!showEmojis)} className={`p-1 transition-colors ${showEmojis ? 'text-purple-600' : 'text-slate-300'}`}><Smile size={32}/></button>
-                            <input value={inputValue} onChange={(e) => { setInputValue(e.target.value); toggleTyping(e.target.value.length > 0); }} onKeyDown={(e) => e.key === 'Enter' && handleSend(inputValue)} placeholder="Enter message..." className="flex-1 bg-transparent border-none outline-none py-2 px-2 text-slate-800 text-[17px] font-bold" />
-                            <button onClick={() => cameraInputRef.current?.click()} className="p-1 text-slate-300 hover:text-purple-600 transition-all mr-1"><Camera size={28}/></button>
-                            <button onClick={() => fileInputRef.current?.click()} className="p-1 text-slate-300 rotate-45 hover:text-purple-600 transition-all"><Paperclip size={28}/></button>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <div className="hidden sm:flex flex-col items-end mr-2">
+                    <span className="text-[10px] font-black text-muted-foreground uppercase">Identity</span>
+                    <span className="font-bold text-sm">{userName}</span>
+                  </div>
+                  <div className="w-10 h-10 rounded-full bg-primary/20 border border-primary/20 flex items-center justify-center">
+                    <UserCircle size={24} className="text-primary" />
+                  </div>
+                </div>
+              </header>
+
+              {/* Messages Container */}
+              <main className="flex-1 overflow-y-auto px-4 py-6 space-y-4 scroll-smooth custom-scrollbar relative z-10 w-full">
+                <div className="max-w-4xl mx-auto w-full">
+                  <AnimatePresence mode="popLayout">
+                  {messages.map((msg, i) => {
+                      const isMe = msg.sender_id === myId;
+                      const isSnap = msg.type === 'snap';
+                      const hasReaction = msg.reactions && msg.reactions.length > 0;
+                      
+                      return (
+                      <motion.div 
+                        key={msg.id || i} 
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }} 
+                        animate={{ opacity: 1, y: 0, scale: 1 }} 
+                        className={`flex w-full flex-col mb-1 ${isMe ? 'items-end' : 'items-start'}`}
+                      >
+                        {!isMe && (
+                          <span className="text-[10px] font-black text-muted-foreground mb-1 uppercase tracking-widest px-4 italic">
+                            {msg.sender_name}
+                          </span>
+                        )}
+                        
+                        <div className={`group relative flex items-center gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                          <div 
+                            onDoubleClick={() => handleReaction(msg)}
+                            className={`
+                              relative p-3.5 max-w-[280px] sm:max-w-[400px] cursor-pointer transition-all duration-200
+                              ${isMe 
+                                ? 'ig-bubble-gradient text-white rounded-[1.5rem] rounded-tr-[0.3rem]' 
+                                : 'bg-secondary text-white rounded-[1.5rem] rounded-tl-[0.3rem] border border-white/5'}
+                            `}
+                          >
+                            {/* Reply Indicator */}
+                            {msg.reply_to_name && (
+                              <div className="bg-black/10 rounded-xl p-2 mb-2 border-l-2 border-white/20 text-[10px] flex gap-2 items-center opacity-80">
+                                <div className="truncate">
+                                  <span className="font-black">@{msg.reply_to_name}</span>
+                                  <p className="truncate italic">{msg.reply_to_content}</p>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Media Content */}
+                            {!isSnap && msg.type === 'image' && (
+                              <div className="relative group/media" onClick={() => setExpandedMedia(msg)}>
+                                <img src={msg.file_url} className="rounded-xl mb-1 max-w-full hover:brightness-90 transition-all shadow-lg" />
+                              </div>
+                            )}
+                            {!isSnap && msg.type === 'video' && (
+                              <div className="relative rounded-xl overflow-hidden mb-1 group/video" onClick={() => setExpandedMedia(msg)}>
+                                <video src={msg.file_url} className="max-w-full" />
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover/video:bg-black/40 transition-all">
+                                  <PlayCircle size={32} className="text-white drop-shadow-lg" />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Text/Snap Label */}
+                            {isSnap ? (
+                              <div className="flex items-center gap-3 py-1" onClick={() => setExpandedMedia(msg)}>
+                                <div className="w-10 h-10 rounded-full bg-black/10 flex items-center justify-center">
+                                  <Camera size={18} />
+                                </div>
+                                <span className="font-black text-lg uppercase tracking-tighter italic">Photo Message</span>
+                              </div>
+                            ) : (
+                              <p className="px-1 text-[15px] sm:text-[16px] leading-snug font-medium whitespace-pre-wrap break-words">
+                                {msg.content}
+                              </p>
+                            )}
+
+                            {/* Reactions */}
+                            {hasReaction && (
+                              <div className="absolute -bottom-2 -right-1 bg-zinc-900 border border-white/10 rounded-full px-1.5 py-0.5 shadow-xl flex items-center gap-0.5 scale-90">
+                                {Array.from(new Set(msg.reactions.map((r: any) => r.emoji))).map((emoji: any) => (
+                                  <span key={emoji} className="text-[10px]">{emoji}</span>
+                                ))}
+                                <span className="text-[8px] font-bold text-white/60 ml-0.5">{msg.reactions.length}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 3 Dots Menu for OWN messages */}
+                          {isMe && (
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1 items-end">
+                              <button onClick={() => handleEdit(msg)} className="p-1.5 hover:bg-white/10 rounded-full text-muted-foreground hover:text-white transition-colors">
+                                <Edit3 size={14} />
+                              </button>
+                              <button onClick={() => handleDelete(msg.id)} className="p-1.5 hover:bg-red-500/20 rounded-full text-muted-foreground hover:text-red-400 transition-colors">
+                                <X size={14} />
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <button 
-                            onMouseDown={() => startLongPress(() => setShowSettings(true))} 
-                            onMouseUp={cancelLongPress} 
-                            onMouseLeave={cancelLongPress} 
-                            onTouchStart={() => startLongPress(() => setShowSettings(true))} 
-                            onTouchEnd={cancelLongPress} 
-                            onClick={() => { if(!showSettings) handleSend(inputValue); }} 
-                            className="w-16 h-16 rounded-[1.8rem] flex items-center justify-center text-white bg-purple-600 hover:bg-purple-700 active:scale-95 transition-all shadow-xl flex-shrink-0"
-                        >
-                            <Send size={30} className="ml-1.5"/>
+                      </motion.div>
+                      );
+                  })}
+                  </AnimatePresence>
+                  <div ref={messagesEndRef} className="h-4" />
+                </div>
+              </main>
+
+              {/* Input Area */}
+              <footer className="pb-8 pt-4 px-4 bg-background/80 backdrop-blur-2xl border-t border-white/5 relative z-20 shrink-0">
+                <div className="max-w-4xl mx-auto w-full space-y-3">
+                  <div className="h-4 flex items-center justify-between px-2">
+                    {typingUsers.length > 0 && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
+                        <div className="flex gap-1">
+                          <span className="w-1 h-1 bg-primary rounded-full animate-bounce" />
+                          <span className="w-1 h-1 bg-primary rounded-full animate-bounce [animation-delay:0.2s]" />
+                          <span className="w-1 h-1 bg-primary rounded-full animate-bounce [animation-delay:0.4s]" />
+                        </div>
+                        <p className="text-[10px] text-primary font-black uppercase tracking-widest">Signals Detected...</p>
+                      </motion.div>
+                    )}
+                    {isUploading && (
+                      <div className="flex items-center gap-2 ml-auto">
+                        <Loader2 size={10} className="animate-spin text-primary"/>
+                        <span className="text-[10px] font-black uppercase text-muted-foreground">Uploading...</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <AnimatePresence>
+                    {replyingTo && (
+                      <motion.div 
+                        initial={{ y: 10, opacity: 0 }} 
+                        animate={{ y: 0, opacity: 1 }} 
+                        exit={{ y: 10, opacity: 0 }} 
+                        className="glass-card p-3 rounded-2xl flex items-center justify-between text-[11px]"
+                      >
+                        <div className="truncate flex items-center gap-3">
+                          <div className="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
+                            <Reply size={12}/>
+                          </div>
+                          <div className="truncate">
+                            <span className="font-black text-white">@{replyingTo.sender_name}</span>
+                            <p className="truncate text-muted-foreground">{replyingTo.content}</p>
+                          </div>
+                        </div>
+                        <button onClick={() => setReplyingTo(null)} className="p-2 hover:bg-white/5 rounded-full transition-colors text-muted-foreground hover:text-white">
+                          <X size={14}/>
                         </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <div className="flex items-end gap-3">
+                    <div className="flex-1 glass-card rounded-3xl p-2 flex items-end gap-2">
+                      <div className="flex gap-1 pb-1 pl-1">
+                        <button 
+                          onClick={() => setShowEmojis(!showEmojis)} 
+                          className={`p-2 rounded-2xl transition-all ${showEmojis ? 'bg-primary text-white' : 'hover:bg-white/5 text-muted-foreground hover:text-white'}`}
+                        >
+                          <Smile size={24}/>
+                        </button>
+                        <button 
+                          onClick={() => fileInputRef.current?.click()} 
+                          className="p-2 rounded-2xl hover:bg-white/5 text-muted-foreground hover:text-white transition-all"
+                        >
+                          <Paperclip size={24}/>
+                        </button>
+                        <button 
+                          onClick={() => cameraInputRef.current?.click()} 
+                          className="p-2 rounded-2xl hover:bg-white/5 text-muted-foreground hover:text-white transition-all"
+                        >
+                          <Camera size={24}/>
+                        </button>
+                      </div>
+                      
+                      <textarea 
+                        rows={1}
+                        value={inputValue} 
+                        onChange={(e) => { setInputValue(e.target.value); toggleTyping(e.target.value.length > 0); }} 
+                        onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend(inputValue))} 
+                        placeholder="Type a message..." 
+                        className="flex-1 bg-transparent border-none outline-none py-3 px-1 text-white text-[16px] font-medium resize-none max-h-32" 
+                      />
                     </div>
-                </footer>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* EMOJI COMPONENT */}
-        <AnimatePresence>
-            {showEmojis && (
-                <motion.div initial={{ y: 100 }} animate={{ y: 0 }} exit={{ y: 100 }} className="absolute bottom-36 left-4 right-4 bg-white z-[70] h-[380px] overflow-y-auto rounded-[3.5rem] shadow-2xl p-8 custom-scrollbar">
-                    <div className="grid grid-cols-5 gap-3">
-                        {ALL_EMOJIS.map(emoji => <button key={emoji} onClick={() => setInputValue(prev => prev + emoji)} className="text-4xl hover:scale-125 transition-transform p-3 active:scale-90">{emoji}</button>)}
-                    </div>
-                </motion.div>
-            )}
-        </AnimatePresence>
-
-        {/* SMART FIT VAULT SETTINGS */}
-        <AnimatePresence>
-            {showSettings && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[110] bg-black/98 backdrop-blur-3xl flex items-center justify-center p-4">
-                    <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="w-full max-w-[96%] max-h-[92vh] overflow-y-auto custom-scrollbar-hidden bg-[#0a0a0a] border border-white/5 p-6 sm:p-8 rounded-[3.5rem] shadow-2xl shadow-black/80" onClick={e=>e.stopPropagation()}>
-                        <div className="space-y-8">
-                            <div className="flex justify-between items-center px-2">
-                                <span className="text-white/20 text-[9px] font-black uppercase tracking-[0.6em] italic">Vault Config</span>
-                                <X size={24} onClick={()=>setShowSettings(false)} className="text-white/40 cursor-pointer hover:text-white transition-colors"/>
-                            </div>
-
-                            {/* Timer Section */}
-                            <div className="space-y-5">
-                                <div className="text-white/10 text-[9px] font-black uppercase tracking-[0.4em] px-2 italic">Room Timer</div>
-                                <div className="grid grid-cols-3 gap-3">
-                                    {LIFETIME_OPTIONS.map(opt => (
-                                        <button key={opt.label} onClick={() => { setCurrentLifetime(opt.value); localStorage.setItem('catgram_lifetime', String(opt.value)); }} className={`py-4 rounded-2xl text-[10px] font-black border transition-all ${currentLifetime === opt.value ? 'bg-purple-600 border-purple-400 text-white shadow-lg' : 'bg-white/[0.03] border-white/5 text-white/30 hover:bg-white/[0.08]'}`}>{opt.label}</button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Atmosphere Section */}
-                            <div className="space-y-5">
-                                <div className="text-white/10 text-[9px] font-black uppercase tracking-[0.4em] px-2 italic">Atmosphere</div>
-                                <div className="grid grid-cols-2 gap-3">
-                                    {WALLPAPERS.map(wp => (
-                                        <button key={wp.name} onClick={() => { setWallpaper(wp.class); localStorage.setItem('catgram_wallpaper', wp.class); }} className={`p-5 rounded-[2rem] text-[9px] bg-gradient-to-br ${wp.class} border-2 ${wallpaper === wp.class ? 'border-white shadow-[0_0_20px_rgba(255,255,255,0.1)]' : 'border-transparent'} text-white font-black transition-all`}>{wp.name}</button>
-                                    ))}
-                                </div>
-                            </div>
-                            
-                            {/* Action Section */}
-                            <div className="space-y-3 pt-4 border-t border-white/5">
-                                <button onClick={() => { localStorage.removeItem('catgram_user_name'); setUserName(null); setShowSettings(false); }} className="w-full py-5 bg-white text-black font-black uppercase text-[12px] tracking-[0.6em] rounded-[2.5rem] shadow-xl active:scale-95 transition-all">rename</button>
-                                <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full py-4 bg-red-600/5 text-red-500/40 font-bold uppercase text-[9px] tracking-[0.6em] rounded-[2.5rem] border border-red-500/10 active:bg-red-500 active:text-white transition-all">Destroy Signal</button>
-                            </div>
-                        </div>
-                    </motion.div>
-                </motion.div>
-            )}
-        </AnimatePresence>
-
-        {/* MEDIA PREVIEW */}
-        <AnimatePresence>{expandedMedia && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[120] bg-black/99 backdrop-blur-3xl flex flex-col items-center justify-center p-6 shadow-2xl" onClick={() => setExpandedMedia(null)}>
-                <div className="relative w-full flex flex-col items-center" onClick={e=>e.stopPropagation()}>
-                    {expandedMedia.type === 'image' || expandedMedia.type === 'snap' ? <img src={expandedMedia.file_url} className="w-full rounded-[3.5rem] shadow-[0_0_150px_rgba(0,0,0,0.8)] border border-white/5" /> : <video src={expandedMedia.file_url} controls autoPlay className="w-full rounded-[3.5rem]" />}
-                    <div className="absolute top-10 right-10"><div style={{ width: 60, height: 60 }}><svg viewBox="0 0 36 36" className="w-full h-full -rotate-90"><path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="3" /><path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#FFF" strokeWidth="6" strokeLinecap="round" strokeDasharray={`${Math.max(0, (expandedMedia.expires_in - (currentTime - new Date(expandedMedia.created_at).getTime())) / expandedMedia.expires_in) * 100}, 100`} /></svg></div></div>
-                    <button onClick={()=>setExpandedMedia(null)} className="mt-16 bg-white text-black px-12 py-5 rounded-full font-black uppercase text-[12px] tracking-widest shadow-2xl hover:scale-105 transition-all">Close Scene</button>
+                    
+                    <button 
+                      onMouseDown={() => startLongPress(() => setShowSettings(true))} 
+                      onMouseUp={cancelLongPress} 
+                      onMouseLeave={cancelLongPress} 
+                      onTouchStart={() => startLongPress(() => setShowSettings(true))} 
+                      onTouchEnd={cancelLongPress} 
+                      onClick={() => { if(!showSettings) handleSend(inputValue); }} 
+                      className="w-14 h-14 rounded-3xl flex items-center justify-center text-white bg-primary hover:bg-primary/90 active:scale-90 transition-all shadow-xl premium-shadow shrink-0"
+                    >
+                      <Send size={24} className="ml-1"/>
+                    </button>
+                  </div>
                 </div>
-            </motion.div>
-        )}</AnimatePresence>
+              </footer>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        <input type="file" ref={cameraInputRef} onChange={(e)=>handleFileUpload(e, true)} accept="image/*" capture="environment" className="hidden" />
-        <input type="file" ref={fileInputRef} onChange={(e)=>handleFileUpload(e)} accept="image/*,video/*" className="hidden" />
-      </div>
+      {/* EMOJI COMPONENT */}
+      <AnimatePresence>
+          {showEmojis && (
+              <motion.div 
+                initial={{ y: 20, opacity: 0 }} 
+                animate={{ y: 0, opacity: 1 }} 
+                exit={{ y: 20, opacity: 0 }} 
+                className="fixed bottom-32 left-4 right-4 sm:left-auto sm:right-6 sm:w-80 glass-card z-[70] max-h-[380px] overflow-y-auto rounded-3xl shadow-2xl p-6"
+              >
+                  <div className="grid grid-cols-5 gap-2">
+                      {ALL_EMOJIS.map(emoji => (
+                        <button 
+                          key={emoji} 
+                          onClick={() => { setInputValue(prev => prev + emoji); setShowEmojis(false); }} 
+                          className="text-2xl hover:scale-125 hover:bg-white/5 rounded-xl transition-all p-2 active:scale-90"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                  </div>
+              </motion.div>
+          )}
+      </AnimatePresence>
 
+      {/* SETTINGS MODAL */}
+      <AnimatePresence>
+          {showSettings && (
+              <motion.div 
+                initial={{ opacity: 0 }} 
+                animate={{ opacity: 1 }} 
+                exit={{ opacity: 0 }} 
+                className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+                onClick={() => setShowSettings(false)}
+              >
+                  <motion.div 
+                    initial={{ scale: 0.95, y: 20, opacity: 0 }} 
+                    animate={{ scale: 1, y: 0, opacity: 1 }} 
+                    exit={{ scale: 0.95, y: 20, opacity: 0 }} 
+                    className="w-full max-w-md glass-card rounded-3xl overflow-hidden shadow-2xl" 
+                    onClick={e=>e.stopPropagation()}
+                  >
+                      <div className="p-8 space-y-8">
+                          <div className="text-center space-y-2">
+                              <h2 className="text-3xl font-black italic uppercase tracking-tighter text-white">Profile Settings</h2>
+                              <p className="text-xs text-muted-foreground font-medium uppercase tracking-[0.2em]">Manage your identity</p>
+                          </div>
+
+                          <div className="space-y-4">
+                              <div className="flex items-center gap-3 px-2">
+                                <UserCircle className="text-primary" size={20} />
+                                <span className="text-[10px] font-black uppercase tracking-widest text-white/40">Current Alias</span>
+                              </div>
+                              <div className="glass-card p-5 rounded-2xl flex items-center justify-between border-primary/20">
+                                  <span className="font-bold text-xl text-white">{userName}</span>
+                                  <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                              </div>
+                          </div>
+                          
+                          <div className="pt-6 border-t border-white/10 space-y-3">
+                              <button 
+                                onClick={() => { localStorage.removeItem('catgram_user_name'); setUserName(null); setShowSettings(false); }} 
+                                className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black uppercase text-xs tracking-[0.3em] rounded-2xl shadow-xl active:scale-[0.98] transition-all"
+                              >
+                                Change Name
+                              </button>
+                              <button 
+                                onClick={() => setShowSettings(false)} 
+                                className="w-full py-4 glass-card hover:bg-white/10 text-white/60 font-black uppercase text-[10px] tracking-widest rounded-2xl transition-all"
+                              >
+                                Back to Chat
+                              </button>
+                          </div>
+                      </div>
+                  </motion.div>
+              </motion.div>
+          )}
+      </AnimatePresence>
+
+      {/* MEDIA PREVIEW */}
+      <AnimatePresence>{expandedMedia && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-6 shadow-2xl" 
+            onClick={() => setExpandedMedia(null)}
+          >
+              <div className="relative w-full max-w-4xl flex flex-col items-center" onClick={e=>e.stopPropagation()}>
+                  {expandedMedia.type === 'image' || expandedMedia.type === 'snap' ? (
+                    <img src={expandedMedia.file_url} className="w-full max-h-[80vh] object-contain rounded-3xl shadow-2xl border border-white/5" />
+                  ) : (
+                    <video src={expandedMedia.file_url} controls autoPlay className="w-full rounded-3xl" />
+                  )}
+                  
+                  <div className="mt-8 flex items-center gap-6">
+                    <button 
+                      onClick={()=>setExpandedMedia(null)} 
+                      className="bg-white text-black px-10 py-4 rounded-full font-black uppercase text-xs tracking-widest shadow-2xl hover:scale-105 transition-all"
+                    >
+                      Return to Chat
+                    </button>
+                  </div>
+              </div>
+          </motion.div>
+      )}</AnimatePresence>
+
+      <input type="file" ref={cameraInputRef} onChange={(e)=>handleFileUpload(e, true)} accept="image/*" capture="environment" className="hidden" />
+      <input type="file" ref={fileInputRef} onChange={(e)=>handleFileUpload(e)} accept="image/*,video/*" className="hidden" />
     </div>
+
   );
 }
