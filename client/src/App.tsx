@@ -65,8 +65,6 @@ export default function App() {
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [avatarColor, setAvatarColor] = useState(() => localStorage.getItem('catgram_avatar_color') || '#8b5cf6');
   const [profilePic, setProfilePic] = useState(() => localStorage.getItem('catgram_profile_pic') || '');
-  const [showGifs, setShowGifs] = useState(false);
-  const [gifs, setGifs] = useState<any[]>([]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -296,17 +294,6 @@ export default function App() {
       await handleSend(isSnap ? "Photo" : file.name, isSnap ? 'snap' : file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file', publicUrl, file.name);
     } catch (err) { console.error("Upload Error"); } finally { setIsUploading(false); }
   };
-
-  const fetchGifs = async (query = "") => {
-    try {
-      const q = query || "cat";
-      const res = await fetch(`https://tenor.googleapis.com/v2/search?q=${q}&key=LIVD6OHS9P3Z&client_key=catgram&limit=12`);
-      const data = await res.json();
-      setGifs(data.results || []);
-    } catch (err) {}
-  };
-
-  useEffect(() => { if (showGifs) fetchGifs(); }, [showGifs]);
 
   const handleScroll = (e: any) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
@@ -708,12 +695,6 @@ export default function App() {
                         >
                           <Paperclip size={22}/>
                         </button>
-                        <button 
-                          onClick={() => setShowGifs(!showGifs)} 
-                          className={`p-2.5 rounded-full transition-all ${showGifs ? 'bg-primary text-white shadow-lg' : 'hover:bg-white/5 text-muted-foreground hover:text-white'}`}
-                        >
-                          <Image size={22}/>
-                        </button>
                       </div>
                       
                       <textarea 
@@ -764,39 +745,6 @@ export default function App() {
                           {emoji}
                         </button>
                       ))}
-                  </div>
-              </motion.div>
-          )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-          {showGifs && (
-              <motion.div 
-                initial={{ y: 20, opacity: 0 }} 
-                animate={{ y: 0, opacity: 1 }} 
-                exit={{ y: 20, opacity: 0 }} 
-                className="fixed bottom-24 sm:bottom-32 left-4 right-4 sm:left-auto sm:right-6 sm:w-80 glass-card z-[70] max-h-[400px] overflow-hidden rounded-3xl shadow-2xl flex flex-col"
-              >
-                  <div className="p-4 border-b border-white/10">
-                    <input 
-                      autoFocus
-                      placeholder="Search GIFs..." 
-                      className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm outline-none focus:border-primary/50"
-                      onChange={(e) => fetchGifs(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
-                    <div className="grid grid-cols-2 gap-2">
-                        {gifs.map(gif => (
-                          <div 
-                            key={gif.id} 
-                            onClick={() => { handleSend("GIF", "image", gif.media_formats.tinygif.url); setShowGifs(false); }}
-                            className="aspect-square rounded-xl overflow-hidden cursor-pointer hover:opacity-80 transition-opacity bg-white/5"
-                          >
-                            <img src={gif.media_formats.tinygif.url} className="w-full h-full object-cover" />
-                          </div>
-                        ))}
-                    </div>
                   </div>
               </motion.div>
           )}
