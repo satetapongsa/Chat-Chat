@@ -98,6 +98,21 @@
   .ig-bubble-gradient {
     background: linear-gradient(to right, #8a3ab9, #bc1888, #e95950);
   }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 1rem);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+/* Prevent body scroll on mobile when keyboard is up if needed */
+.no-scroll {
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
 }
 
 /* Animations */

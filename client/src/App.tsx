@@ -5,7 +5,7 @@ import {
   Send, Cat, Paperclip, Smile, CheckCheck, X, Timer, 
   Settings, UserCircle, Edit3, Reply, PlayCircle, Volume2, Camera, Palette, Eye,
   ArrowLeft, Plus, Lock, Hash, Search, Zap, Loader2, AlertCircle, CheckCircle2,
-  ChevronRight, LogOut, UserMinus, RefreshCw, Database
+  ChevronRight, LogOut, UserMinus, RefreshCw, Database, MoreHorizontal, Trash2
 } from "lucide-react";
 
 /**
@@ -14,8 +14,13 @@ import {
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-const isSupabaseConfigured = supabaseUrl && supabaseAnonKey;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+
+// ใช้ placeholder เพื่อไม่ให้แอปพัง (Crash) ตอนเริ่มต้น ถ้ายังไม่ได้ตั้งค่า .env
+const supabase = createClient(
+  supabaseUrl || 'https://your-project.supabase.co', 
+  supabaseAnonKey || 'your-anon-key'
+);
 
 const GLOBAL_ROOM_ID = "catgram-global-vault";
 
@@ -33,6 +38,11 @@ const playSound = (type: 'sent' | 'received') => {
     audio.volume = 0.2;
     audio.play().catch(() => {});
   } catch (e) {}
+};
+
+const formatTime = (dateString: string) => {
+  const date = new Date(dateString);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 };
 
 export default function App() {
@@ -278,10 +288,10 @@ export default function App() {
                 <div className="w-32 h-32 bg-primary/10 rounded-[2.5rem] flex items-center justify-center premium-shadow overflow-hidden p-2">
                   <img src="/logo.png" alt="CatGram Logo" className="w-full h-full object-contain animate-float" />
                 </div>
-                <h1 className="text-6xl font-black tracking-tighter text-white uppercase italic">
+                <h1 className="text-4xl sm:text-6xl font-black tracking-tighter text-white uppercase italic">
                   CatGram
                 </h1>
-                <p className="text-muted-foreground font-medium">Direct Messaging. Photos. Stories.</p>
+                <p className="text-sm sm:text-base text-muted-foreground font-medium">Direct Messaging. Photos. Stories.</p>
               </div>
 
               {!isSupabaseConfigured && (
@@ -310,8 +320,8 @@ export default function App() {
                         }
                       }
                     }} 
-                    placeholder="Enter your unique alias" 
-                    className="w-full glass-input p-5 rounded-2xl text-center text-white font-bold text-xl" 
+                    placeholder="Enter your alias" 
+                    className="w-full glass-input p-4 sm:p-5 rounded-2xl text-center text-white font-bold text-lg sm:text-xl" 
                   />
                   <button 
                     onClick={() => { 
@@ -324,7 +334,7 @@ export default function App() {
                         }
                       } 
                     }} 
-                    className="w-full bg-primary hover:bg-primary/90 text-white py-5 rounded-2xl font-black uppercase tracking-widest active:scale-[0.98] transition-all text-lg shadow-xl"
+                    className="w-full bg-primary hover:bg-primary/90 text-white py-4 sm:py-5 rounded-2xl font-black uppercase tracking-widest active:scale-[0.98] transition-all text-base sm:text-lg shadow-xl"
                   >
                     Join the Vault
                   </button>
@@ -387,7 +397,7 @@ export default function App() {
             {/* Main Chat Area */}
             <div className="flex-1 flex flex-col h-full overflow-hidden relative">
               {/* Header */}
-              <header className="h-20 border-b border-white/5 bg-background/50 backdrop-blur-xl flex items-center justify-between px-6 z-20 shrink-0">
+              <header className="h-16 sm:h-20 border-b border-white/5 bg-background/50 backdrop-blur-xl flex items-center justify-between px-4 sm:px-6 pt-safe z-20 shrink-0">
                 <div className="flex items-center gap-4">
                   <div className="lg:hidden w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center" onClick={() => setShowSettings(true)}>
                     <Settings size={20} className="text-primary" />
@@ -438,10 +448,10 @@ export default function App() {
                           <div 
                             onDoubleClick={() => handleReaction(msg)}
                             className={`
-                              relative p-3.5 max-w-[280px] sm:max-w-[400px] cursor-pointer transition-all duration-200
+                              relative p-3 sm:p-3.5 max-w-[85vw] sm:max-w-[400px] cursor-pointer transition-all duration-200
                               ${isMe 
-                                ? 'ig-bubble-gradient text-white rounded-[1.5rem] rounded-tr-[0.3rem]' 
-                                : 'bg-secondary text-white rounded-[1.5rem] rounded-tl-[0.3rem] border border-white/5'}
+                                ? 'ig-bubble-gradient text-white rounded-[1.25rem] rounded-tr-[0.3rem]' 
+                                : 'bg-secondary text-white rounded-[1.25rem] rounded-tl-[0.3rem] border border-white/5'}
                             `}
                           >
                             {/* Reply Indicator */}
@@ -494,19 +504,45 @@ export default function App() {
                             )}
                           </div>
 
-                          {/* 3 Dots Menu for OWN messages */}
-                          {isMe && (
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1 items-end">
-                              <button onClick={() => handleEdit(msg)} className="p-1.5 hover:bg-white/10 rounded-full text-muted-foreground hover:text-white transition-colors">
-                                <Edit3 size={14} />
+                            {/* IG Style Action Menu */}
+                            <div className={`
+                                flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity
+                                ${isMe ? 'mr-1' : 'ml-1'}
+                            `}>
+                              <button 
+                                onClick={() => setReplyingTo(msg)}
+                                className="p-1.5 hover:bg-white/5 rounded-full text-muted-foreground hover:text-white transition-colors"
+                                title="Reply"
+                              >
+                                <Reply size={14} />
                               </button>
-                              <button onClick={() => handleDelete(msg.id)} className="p-1.5 hover:bg-red-500/20 rounded-full text-muted-foreground hover:text-red-400 transition-colors">
-                                <X size={14} />
-                              </button>
+                              
+                              {isMe && (
+                                <>
+                                  <button 
+                                    onClick={() => handleEdit(msg)} 
+                                    className="p-1.5 hover:bg-white/5 rounded-full text-muted-foreground hover:text-white transition-colors"
+                                    title="Edit"
+                                  >
+                                    <Edit3 size={14} />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleDelete(msg.id)} 
+                                    className="p-1.5 hover:bg-red-500/10 rounded-full text-muted-foreground hover:text-red-400 transition-colors"
+                                    title="Delete"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      </motion.div>
+                          </div>
+
+                          {/* Timestamp */}
+                          <span className={`text-[9px] font-bold text-muted-foreground/50 mt-0.5 px-2 ${isMe ? 'mr-2' : 'ml-2'}`}>
+                            {formatTime(msg.created_at)}
+                          </span>
+                        </motion.div>
                       );
                   })}
                   </AnimatePresence>
@@ -515,8 +551,8 @@ export default function App() {
               </main>
 
               {/* Input Area */}
-              <footer className="pb-8 pt-4 px-4 bg-background/80 backdrop-blur-2xl border-t border-white/5 relative z-20 shrink-0">
-                <div className="max-w-4xl mx-auto w-full space-y-3">
+              <footer className="pb-safe pt-2 px-3 sm:px-4 bg-background/80 backdrop-blur-2xl border-t border-white/5 relative z-20 shrink-0">
+                <div className="max-w-4xl mx-auto w-full space-y-2 pb-2 sm:pb-4">
                   <div className="h-4 flex items-center justify-between px-2">
                     {typingUsers.length > 0 && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
@@ -561,25 +597,19 @@ export default function App() {
                   </AnimatePresence>
 
                   <div className="flex items-end gap-3">
-                    <div className="flex-1 glass-card rounded-3xl p-2 flex items-end gap-2">
-                      <div className="flex gap-1 pb-1 pl-1">
+                    <div className="flex-1 glass-card rounded-[2rem] p-1.5 flex items-end gap-2 border-white/10">
+                      <div className="flex gap-0.5 pb-0.5">
                         <button 
                           onClick={() => setShowEmojis(!showEmojis)} 
-                          className={`p-2 rounded-2xl transition-all ${showEmojis ? 'bg-primary text-white' : 'hover:bg-white/5 text-muted-foreground hover:text-white'}`}
+                          className={`p-2.5 rounded-full transition-all ${showEmojis ? 'bg-primary text-white shadow-lg' : 'hover:bg-white/5 text-muted-foreground hover:text-white'}`}
                         >
-                          <Smile size={24}/>
+                          <Smile size={22}/>
                         </button>
                         <button 
                           onClick={() => fileInputRef.current?.click()} 
-                          className="p-2 rounded-2xl hover:bg-white/5 text-muted-foreground hover:text-white transition-all"
+                          className="p-2.5 rounded-full hover:bg-white/5 text-muted-foreground hover:text-white transition-all"
                         >
-                          <Paperclip size={24}/>
-                        </button>
-                        <button 
-                          onClick={() => cameraInputRef.current?.click()} 
-                          className="p-2 rounded-2xl hover:bg-white/5 text-muted-foreground hover:text-white transition-all"
-                        >
-                          <Camera size={24}/>
+                          <Paperclip size={22}/>
                         </button>
                       </div>
                       
@@ -589,7 +619,7 @@ export default function App() {
                         onChange={(e) => { setInputValue(e.target.value); toggleTyping(e.target.value.length > 0); }} 
                         onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend(inputValue))} 
                         placeholder="Type a message..." 
-                        className="flex-1 bg-transparent border-none outline-none py-3 px-1 text-white text-[16px] font-medium resize-none max-h-32" 
+                        className="flex-1 bg-transparent border-none outline-none py-3 px-1 text-white text-[15px] sm:text-[16px] font-medium resize-none max-h-32 min-h-[44px]" 
                       />
                     </div>
                     
@@ -600,9 +630,9 @@ export default function App() {
                       onTouchStart={() => startLongPress(() => setShowSettings(true))} 
                       onTouchEnd={cancelLongPress} 
                       onClick={() => { if(!showSettings) handleSend(inputValue); }} 
-                      className="w-14 h-14 rounded-3xl flex items-center justify-center text-white bg-primary hover:bg-primary/90 active:scale-90 transition-all shadow-xl premium-shadow shrink-0"
+                      className="w-12 h-12 sm:w-[52px] sm:h-[52px] rounded-full flex items-center justify-center text-white bg-primary hover:bg-primary/90 active:scale-90 transition-all shadow-xl premium-shadow shrink-0 mb-0.5"
                     >
-                      <Send size={24} className="ml-1"/>
+                      <Send size={20} className="ml-0.5"/>
                     </button>
                   </div>
                 </div>
@@ -619,7 +649,7 @@ export default function App() {
                 initial={{ y: 20, opacity: 0 }} 
                 animate={{ y: 0, opacity: 1 }} 
                 exit={{ y: 20, opacity: 0 }} 
-                className="fixed bottom-32 left-4 right-4 sm:left-auto sm:right-6 sm:w-80 glass-card z-[70] max-h-[380px] overflow-y-auto rounded-3xl shadow-2xl p-6"
+                className="fixed bottom-24 sm:bottom-32 left-4 right-4 sm:left-auto sm:right-6 sm:w-80 glass-card z-[70] max-h-[300px] sm:max-h-[380px] overflow-y-auto rounded-3xl shadow-2xl p-4 sm:p-6"
               >
                   <div className="grid grid-cols-5 gap-2">
                       {ALL_EMOJIS.map(emoji => (
