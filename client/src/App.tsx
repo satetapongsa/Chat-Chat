@@ -5,7 +5,8 @@ import {
   Send, Cat, Paperclip, Smile, CheckCheck, X, Timer, 
   Settings, UserCircle, Edit3, Reply, PlayCircle, Volume2, Camera, Palette, Eye,
   ArrowLeft, Plus, Lock, Hash, Search, Zap, Loader2, AlertCircle, CheckCircle2,
-  ChevronRight, LogOut, UserMinus, RefreshCw, Database, MoreHorizontal, Trash2
+  ChevronRight, LogOut, UserMinus, RefreshCw, Database, MoreHorizontal, Trash2,
+  ArrowDown, Circle, Ghost, Image, Monitor, Sparkles
 } from "lucide-react";
 
 /**
@@ -60,6 +61,12 @@ export default function App() {
   const [showEmojis, setShowEmojis] = useState(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [onlineUsers, setOnlineUsers] = useState<any>({});
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [avatarColor, setAvatarColor] = useState(() => localStorage.getItem('catgram_avatar_color') || '#8b5cf6');
+  const [profilePic, setProfilePic] = useState(() => localStorage.getItem('catgram_profile_pic') || '');
+  const [showGifs, setShowGifs] = useState(false);
+  const [gifs, setGifs] = useState<any[]>([]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -110,6 +117,15 @@ export default function App() {
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, (payload) => {
         setMessages(prev => prev.filter(m => m.id !== payload.old.id));
       })
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const users: any = {};
+        Object.keys(state).forEach(key => {
+          const user: any = state[key][0];
+          users[user.user_id] = user;
+        });
+        setOnlineUsers(users);
+      })
       .on('broadcast', { event: 'new_msg' }, (payload) => {
           handleIncomingMessage(payload.payload);
       })
@@ -117,7 +133,17 @@ export default function App() {
         if (payload.payload.user === userName) return;
         setTypingUsers(prev => payload.payload.isTyping ? [...new Set([...prev, payload.payload.user])] : prev.filter(u => u !== payload.payload.user));
       })
-      .subscribe();
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            user_id: myId,
+            user_name: userName,
+            online_at: new Date().toISOString(),
+            avatar_color: avatarColor,
+            profile_pic: profilePic
+          });
+        }
+      });
 
     channelRef.current = channel;
     return () => { supabase.removeChannel(channel); };
@@ -208,7 +234,9 @@ export default function App() {
         file_name: fileName,
         reactions: [], 
         room_id: GLOBAL_ROOM_ID,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        avatar_color: avatarColor,
+        profile_pic: profilePic
     };
     
     if (replyingTo) {
@@ -269,7 +297,27 @@ export default function App() {
     } catch (err) { console.error("Upload Error"); } finally { setIsUploading(false); }
   };
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
+  const fetchGifs = async (query = "") => {
+    try {
+      const q = query || "cat";
+      const res = await fetch(`https://tenor.googleapis.com/v2/search?q=${q}&key=LIVD6OHS9P3Z&client_key=catgram&limit=12`);
+      const data = await res.json();
+      setGifs(data.results || []);
+    } catch (err) {}
+  };
+
+  useEffect(() => { if (showGifs) fetchGifs(); }, [showGifs]);
+
+  const handleScroll = (e: any) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    setShowScrollBottom(scrollHeight - scrollTop - clientHeight > 300);
+  };
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => { scrollToBottom(); }, [messages.length]);
 
   return (
         <div className="h-[100dvh] w-full bg-background flex overflow-hidden text-foreground">
@@ -404,7 +452,7 @@ export default function App() {
                     <h2 className="font-black text-lg tracking-tight">Global Vault</h2>
                     <div className="flex items-center gap-2">
                       <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Active Connection</span>
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{Object.keys(onlineUsers).length} Members Active</span>
                     </div>
                   </div>
                 </div>
@@ -417,14 +465,20 @@ export default function App() {
                     <span className="text-[10px] font-black text-muted-foreground uppercase group-hover:text-primary transition-colors">Identity</span>
                     <span className="font-bold text-sm group-hover:text-white transition-colors">{userName}</span>
                   </div>
-                  <div className="w-10 h-10 rounded-full bg-primary/20 border border-primary/20 flex items-center justify-center group-hover:border-primary/50 transition-all">
-                    <UserCircle size={24} className="text-primary" />
+                  <div className="w-10 h-10 rounded-full border-2 border-primary/20 flex items-center justify-center overflow-hidden bg-zinc-900 shadow-inner">
+                    {profilePic ? (
+                        <img src={profilePic} className="w-full h-full object-cover" />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center text-white font-black" style={{ backgroundColor: avatarColor }}>
+                            {userName?.charAt(0).toUpperCase()}
+                        </div>
+                    )}
                   </div>
                 </div>
               </header>
 
               {/* Messages Container */}
-              <main className="flex-1 overflow-y-auto px-4 py-6 space-y-4 scroll-smooth custom-scrollbar relative z-10 w-full">
+              <main onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-6 space-y-4 scroll-smooth custom-scrollbar relative z-10 w-full">
                 <div className="max-w-4xl mx-auto w-full">
                   <AnimatePresence mode="popLayout">
                   {messages.map((msg, i) => {
@@ -435,14 +489,25 @@ export default function App() {
                       return (
                       <motion.div 
                         key={msg.id || i} 
-                        initial={{ opacity: 0, y: 10, scale: 0.95 }} 
-                        animate={{ opacity: 1, y: 0, scale: 1 }} 
+                        initial={{ opacity: 0, scale: 0.5, y: 20, filter: 'blur(10px)' }} 
+                        animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }} 
+                        transition={{ type: "spring", damping: 15, stiffness: 100 }}
                         className={`flex w-full flex-col mb-1 ${isMe ? 'items-end' : 'items-start'}`}
                       >
                         {!isMe && (
-                          <span className="text-[10px] font-black text-muted-foreground mb-1 uppercase tracking-widest px-4 italic">
-                            {msg.sender_name}
-                          </span>
+                          <div className="flex items-center gap-2 mb-1 px-4">
+                            <div className="relative">
+                                <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center text-[8px] font-black" style={{ backgroundColor: msg.avatar_color || '#8b5cf6' }}>
+                                    {msg.profile_pic ? <img src={msg.profile_pic} className="w-full h-full object-cover" /> : msg.sender_name?.charAt(0).toUpperCase()}
+                                </div>
+                                {onlineUsers[msg.sender_id] && (
+                                    <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-green-500 border border-black rounded-full" />
+                                )}
+                            </div>
+                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest italic">
+                                {msg.sender_name}
+                            </span>
+                          </div>
                         )}
                         
                         <div className={`group relative flex items-center gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -566,6 +631,20 @@ export default function App() {
                   </AnimatePresence>
                   <div ref={messagesEndRef} className="h-4" />
                 </div>
+                
+                <AnimatePresence>
+                  {showScrollBottom && (
+                    <motion.button 
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0, opacity: 0 }}
+                      onClick={scrollToBottom}
+                      className="fixed bottom-32 right-6 w-12 h-12 bg-primary text-white rounded-full shadow-2xl flex items-center justify-center z-[50] premium-shadow border border-white/20 active:scale-90 transition-all"
+                    >
+                      <ArrowDown size={24} />
+                    </motion.button>
+                  )}
+                </AnimatePresence>
               </main>
 
               {/* Input Area */}
@@ -629,6 +708,12 @@ export default function App() {
                         >
                           <Paperclip size={22}/>
                         </button>
+                        <button 
+                          onClick={() => setShowGifs(!showGifs)} 
+                          className={`p-2.5 rounded-full transition-all ${showGifs ? 'bg-primary text-white shadow-lg' : 'hover:bg-white/5 text-muted-foreground hover:text-white'}`}
+                        >
+                          <Image size={22}/>
+                        </button>
                       </div>
                       
                       <textarea 
@@ -684,6 +769,39 @@ export default function App() {
           )}
       </AnimatePresence>
 
+      <AnimatePresence>
+          {showGifs && (
+              <motion.div 
+                initial={{ y: 20, opacity: 0 }} 
+                animate={{ y: 0, opacity: 1 }} 
+                exit={{ y: 20, opacity: 0 }} 
+                className="fixed bottom-24 sm:bottom-32 left-4 right-4 sm:left-auto sm:right-6 sm:w-80 glass-card z-[70] max-h-[400px] overflow-hidden rounded-3xl shadow-2xl flex flex-col"
+              >
+                  <div className="p-4 border-b border-white/10">
+                    <input 
+                      autoFocus
+                      placeholder="Search GIFs..." 
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm outline-none focus:border-primary/50"
+                      onChange={(e) => fetchGifs(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
+                    <div className="grid grid-cols-2 gap-2">
+                        {gifs.map(gif => (
+                          <div 
+                            key={gif.id} 
+                            onClick={() => { handleSend("GIF", "image", gif.media_formats.tinygif.url); setShowGifs(false); }}
+                            className="aspect-square rounded-xl overflow-hidden cursor-pointer hover:opacity-80 transition-opacity bg-white/5"
+                          >
+                            <img src={gif.media_formats.tinygif.url} className="w-full h-full object-cover" />
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+              </motion.div>
+          )}
+      </AnimatePresence>
+
       {/* SETTINGS MODAL */}
       <AnimatePresence>
           {showSettings && (
@@ -717,13 +835,59 @@ export default function App() {
                                   <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
                               </div>
                           </div>
+
+                          {/* Profile Customization */}
+                          <div className="space-y-4 pt-4 border-t border-white/10">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-white/40 px-2">Customize Profile</span>
+                              <div className="flex items-center gap-4">
+                                  <div className="w-16 h-16 rounded-full overflow-hidden bg-zinc-900 border-2 border-white/10 relative group/avatar">
+                                      {profilePic ? (
+                                          <img src={profilePic} className="w-full h-full object-cover" />
+                                      ) : (
+                                          <div className="w-full h-full flex items-center justify-center text-2xl font-black text-white" style={{ backgroundColor: avatarColor }}>
+                                              {userName?.charAt(0).toUpperCase()}
+                                          </div>
+                                      )}
+                                      <button 
+                                        onClick={() => cameraInputRef.current?.click()}
+                                        className="absolute inset-0 bg-black/60 opacity-0 group-hover/avatar:opacity-100 transition-opacity flex items-center justify-center"
+                                      >
+                                        <Camera size={20} className="text-white" />
+                                      </button>
+                                  </div>
+                                  <div className="flex-1 space-y-3">
+                                      <div className="flex gap-2">
+                                          {['#8b5cf6', '#ef4444', '#10b981', '#f59e0b', '#3b82f6', '#ec4899'].map(c => (
+                                              <button 
+                                                key={c}
+                                                onClick={() => { setAvatarColor(c); localStorage.setItem('catgram_avatar_color', c); }}
+                                                className={`w-6 h-6 rounded-full border-2 transition-all ${avatarColor === c ? 'border-white scale-110 shadow-lg' : 'border-transparent'}`}
+                                                style={{ backgroundColor: c }}
+                                              />
+                                          ))}
+                                      </div>
+                                      <button 
+                                        onClick={() => { setProfilePic(''); localStorage.removeItem('catgram_profile_pic'); }}
+                                        className="text-[10px] font-bold text-muted-foreground hover:text-white transition-colors underline"
+                                      >
+                                        Reset to Color
+                                      </button>
+                                  </div>
+                              </div>
+                          </div>
                           
                           <div className="pt-6 border-t border-white/10 space-y-3">
                               <button 
-                                onClick={() => { localStorage.removeItem('catgram_user_name'); setUserName(null); setShowSettings(false); }} 
+                                onClick={() => { 
+                                    localStorage.removeItem('catgram_user_name'); 
+                                    localStorage.removeItem('catgram_avatar_color');
+                                    localStorage.removeItem('catgram_profile_pic');
+                                    setUserName(null); 
+                                    setShowSettings(false); 
+                                }} 
                                 className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black uppercase text-xs tracking-[0.3em] rounded-2xl shadow-xl active:scale-[0.98] transition-all"
                               >
-                                Change Name
+                                Reset Identity
                               </button>
                               <button 
                                 onClick={() => setShowSettings(false)} 
