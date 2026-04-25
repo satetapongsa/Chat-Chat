@@ -59,6 +59,7 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [showEmojis, setShowEmojis] = useState(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -78,7 +79,12 @@ export default function App() {
 
   useEffect(() => {
     const itv = setInterval(() => setCurrentTime(Date.now()), 1000);
-    return () => clearInterval(itv);
+    const closeMenu = () => setActiveMenuId(null);
+    window.addEventListener('click', closeMenu);
+    return () => {
+      clearInterval(itv);
+      window.removeEventListener('click', closeMenu);
+    };
   }, []);
 
   useEffect(() => {
@@ -499,37 +505,54 @@ export default function App() {
                             )}
                           </div>
 
-                            {/* IG Style Action Menu */}
-                            <div className={`
-                                flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity
-                                ${isMe ? 'mr-1' : 'ml-1'}
-                            `}>
-                              <button 
-                                onClick={() => setReplyingTo(msg)}
-                                className="p-1.5 hover:bg-white/5 rounded-full text-muted-foreground hover:text-white transition-colors"
-                                title="Reply"
-                              >
-                                <Reply size={14} />
-                              </button>
-                              
-                              {isMe && (
-                                <>
+                            {/* IG Style Action Menu - 3 Dots */}
+                            <div className={`relative ${isMe ? 'mr-1' : 'ml-1'}`}>
+                              <div className="flex items-center gap-1">
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); setReplyingTo(msg); }}
+                                  className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-white/5 rounded-full text-muted-foreground hover:text-white transition-all"
+                                  title="Reply"
+                                >
+                                  <Reply size={14} />
+                                </button>
+                                
+                                {isMe && (
                                   <button 
-                                    onClick={() => handleEdit(msg)} 
-                                    className="p-1.5 hover:bg-white/5 rounded-full text-muted-foreground hover:text-white transition-colors"
-                                    title="Edit"
+                                    onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === msg.id ? null : msg.id); }}
+                                    className={`p-1.5 rounded-full transition-all ${activeMenuId === msg.id ? 'bg-primary text-white' : 'hover:bg-white/5 text-muted-foreground hover:text-white'}`}
                                   >
-                                    <Edit3 size={14} />
+                                    <MoreHorizontal size={14} />
                                   </button>
-                                  <button 
-                                    onClick={() => handleDelete(msg.id)} 
-                                    className="p-1.5 hover:bg-red-500/10 rounded-full text-muted-foreground hover:text-red-400 transition-colors"
-                                    title="Delete"
+                                )}
+                              </div>
+
+                              {/* Dropdown Menu */}
+                              <AnimatePresence>
+                                {activeMenuId === msg.id && (
+                                  <motion.div 
+                                    initial={{ opacity: 0, scale: 0.9, y: 5 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.9, y: 5 }}
+                                    className={`absolute z-[100] bottom-full mb-2 ${isMe ? 'right-0' : 'left-0'} w-28 glass-card rounded-xl overflow-hidden shadow-2xl border-white/10`}
+                                    onClick={e => e.stopPropagation()}
                                   >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </>
-                              )}
+                                    <button 
+                                      onClick={() => { handleEdit(msg); setActiveMenuId(null); }}
+                                      className="w-full flex items-center gap-2 p-3 text-[11px] font-bold hover:bg-white/5 transition-colors border-b border-white/5"
+                                    >
+                                      <Edit3 size={12} />
+                                      <span>Edit</span>
+                                    </button>
+                                    <button 
+                                      onClick={() => { handleDelete(msg.id); setActiveMenuId(null); }}
+                                      className="w-full flex items-center gap-2 p-3 text-[11px] font-bold text-red-400 hover:bg-red-500/10 transition-colors"
+                                    >
+                                      <Trash2 size={12} />
+                                      <span>Delete</span>
+                                    </button>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
                             </div>
                           </div>
 
