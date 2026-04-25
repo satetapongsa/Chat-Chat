@@ -46,6 +46,16 @@ const formatTime = (dateString: string) => {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 };
 
+const SnapTimer = ({ duration, onComplete }: { duration: number, onComplete: () => void }) => {
+  const [timeLeft, setTimeLeft] = useState(duration);
+  useEffect(() => {
+    if (timeLeft <= 0) { onComplete(); return; }
+    const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
+    return () => clearInterval(timer);
+  }, [timeLeft, onComplete]);
+  return <span className="font-black text-lg">{timeLeft}s</span>;
+};
+
 export default function App() {
   const [userName, setUserName] = useState<string | null>(() => localStorage.getItem('catgram_user_name'));
   const [tempName, setTempName] = useState("");
@@ -305,6 +315,16 @@ export default function App() {
   };
 
   useEffect(() => { scrollToBottom(); }, [messages.length]);
+
+  useEffect(() => {
+    if (expandedMedia?.type === 'snap') {
+      const timer = setTimeout(() => {
+        handleDelete(expandedMedia.id);
+        setExpandedMedia(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [expandedMedia]);
 
   return (
         <div className="h-[100dvh] w-full bg-background flex overflow-hidden text-foreground">
@@ -694,6 +714,13 @@ export default function App() {
                           className="p-2.5 rounded-full hover:bg-white/5 text-muted-foreground hover:text-white transition-all"
                         >
                           <Paperclip size={22}/>
+                        </button>
+                        <button 
+                          onClick={() => cameraInputRef.current?.click()} 
+                          className="p-2.5 rounded-full bg-orange-500/10 text-orange-500 hover:bg-orange-500 hover:text-white transition-all shadow-lg shadow-orange-500/20"
+                          title="Snap Photo"
+                        >
+                          <Camera size={22}/>
                         </button>
                       </div>
                       
