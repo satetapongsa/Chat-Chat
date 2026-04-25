@@ -373,15 +373,7 @@ export default function App() {
               </div>
 
               <div className="pt-6 border-t border-white/5 space-y-4">
-                <button 
-                  onClick={() => setShowSettings(true)}
-                  className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 transition-colors text-left group"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-muted-foreground group-hover:text-white transition-colors">
-                    <Settings size={20} />
-                  </div>
-                  <span className="font-bold text-sm">Vault Settings</span>
-                </button>
+                {/* Removed Vault Settings button from here as requested */}
                 <button 
                   onClick={() => { localStorage.removeItem('catgram_user_name'); setUserName(null); }}
                   className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-destructive/10 transition-colors text-left group"
@@ -399,8 +391,8 @@ export default function App() {
               {/* Header */}
               <header className="h-16 sm:h-20 border-b border-white/5 bg-background/50 backdrop-blur-xl flex items-center justify-between px-4 sm:px-6 pt-safe z-20 shrink-0">
                 <div className="flex items-center gap-4">
-                  <div className="lg:hidden w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center" onClick={() => setShowSettings(true)}>
-                    <Settings size={20} className="text-primary" />
+                  <div className="lg:hidden w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center overflow-hidden p-1.5" onClick={() => setShowSettings(true)}>
+                    <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
                   </div>
                   <div>
                     <h2 className="font-black text-lg tracking-tight">Global Vault</h2>
@@ -411,12 +403,15 @@ export default function App() {
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-3">
+                <div 
+                  className="flex items-center gap-3 cursor-pointer group active:scale-95 transition-all"
+                  onClick={() => setShowSettings(true)}
+                >
                   <div className="hidden sm:flex flex-col items-end mr-2">
-                    <span className="text-[10px] font-black text-muted-foreground uppercase">Identity</span>
-                    <span className="font-bold text-sm">{userName}</span>
+                    <span className="text-[10px] font-black text-muted-foreground uppercase group-hover:text-primary transition-colors">Identity</span>
+                    <span className="font-bold text-sm group-hover:text-white transition-colors">{userName}</span>
                   </div>
-                  <div className="w-10 h-10 rounded-full bg-primary/20 border border-primary/20 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-full bg-primary/20 border border-primary/20 flex items-center justify-center group-hover:border-primary/50 transition-all">
                     <UserCircle size={24} className="text-primary" />
                   </div>
                 </div>
